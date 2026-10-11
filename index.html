@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0b0b" />
+  <meta name="theme-color" content="#000000" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>GKME 网页手柄</title>
@@ -37,11 +37,19 @@
 
   <!-- Settings overlay -->
   <div id="settings" class="hidden">
-    <aside id="settingsNav"></aside>
+    <aside id="settingsNav">
+      <button id="settingsClose" class="sideback">
+        <svg class="sideback-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="#CCCCCC" d="M20,11H7.8l5.6,-5.6L12,4l-8,8 8,8 1.4,-1.4L7.8,13H20v-2z" />
+        </svg>
+        <span>返回</span>
+      </button>
+      <div class="sidebar-divider"></div>
+      <div id="settingsNavList"></div>
+    </aside>
     <main id="settingsMain">
       <header class="settingsheader">
         <span class="settingsTitle">GKME 设置</span>
-        <button id="settingsClose" class="iconbtn">完成</button>
       </header>
       <div id="settingsBody"></div>
     </main>

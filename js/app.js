@@ -19,7 +19,8 @@ const APP_VERSION = "1.0.0";
 class App {
   constructor() {
     this.settings = loadSettings();
-    if (!this.settings.appearance) this.settings.appearance = JSON.parse(JSON.stringify(DEFAULT_APPEARANCE));
+    // The web build has no appearance editor; always use the Android default profile.
+    this.settings.appearance = JSON.parse(JSON.stringify(DEFAULT_APPEARANCE));
     this.presets = ensurePresets();
     this.activePreset = getActivePresetName();
     if (!this.presets[this.activePreset]) this.activePreset = "full_con";
@@ -63,6 +64,7 @@ class App {
     this.settingsPanel = document.getElementById("settings");
     this.settingsBody = document.getElementById("settingsBody");
     this.settingsNav = document.getElementById("settingsNav");
+    this.settingsNavList = document.getElementById("settingsNavList");
     this.settingsClose = document.getElementById("settingsClose");
     this.editBar = document.getElementById("editbar");
     this.toast = document.getElementById("toast");
@@ -408,14 +410,15 @@ class App {
       ["misc", "杂项"],
       ["about", "关于"],
     ];
-    this.settingsNav.innerHTML = "";
+    const list = this.settingsNavList || this.settingsNav;
+    list.innerHTML = "";
     for (const [id, label] of cats) {
       const b = document.createElement("button");
       b.className = "navitem";
       b.dataset.cat = id;
       b.textContent = label;
       b.addEventListener("click", () => this._selectCategory(id));
-      this.settingsNav.appendChild(b);
+      list.appendChild(b);
     }
   }
 

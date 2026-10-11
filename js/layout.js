@@ -10,8 +10,12 @@ import {
   BIT, DPAD, Kb, CONTROLS, baseId, getControl, isKeypadId, lockAspectFor,
   controlLabel, keyboardCaption, KB_MODIFIER_CODES, MODIFIER_BITS,
 } from "./controls.js";
+import { drawIcon } from "./icons.js";
 
 export const GRID_COLS = 120;
+
+// sans-serif-medium (Android) ≈ weight 500 of the platform UI font.
+const UI_FONT = '"Segoe UI", Roboto, system-ui, -apple-system, "Microsoft YaHei", sans-serif';
 
 const DEFAULTS = {
   visible: true,
@@ -71,25 +75,129 @@ export function normalizeButton(raw) {
   return b;
 }
 
+// Appearance defaults, transposed 1:1 from AppSettings.kt (SOLID_COLOR fills).
+// Widths are in CSS px, which the gamepad canvas treats as dp (the page is
+// rendered with viewport width=device-width, so 1 CSS px ≈ 1 dp on a phone).
 export const DEFAULT_APPEARANCE = {
-  background: { color: "rgba(0,0,0,0)", image: null },
-  button: {
-    fill: "rgba(255,255,255,0.10)",
-    fillActive: "rgba(255,255,255,0.35)",
-    stroke: "rgba(255,255,255,0.25)",
-    text: "rgba(255,255,255,0.85)",
-  },
-  joystick: {
-    base: "rgba(0,0,0,0.35)",
-    stroke: "#333333",
-    thumb: "#1a1a1a",
-    thumbStroke: "rgba(255,255,255,0.3)",
-  },
-  touchpad: {
-    fill: "rgba(18,18,18,0.6)",
-    stroke: "rgba(255,255,255,0.25)",
-  },
+  // ── 背景 ──
+  bgFillType: 0, // 0 = SOLID_COLOR, 1 = IMAGE
+  bgColor: "#000000",
+  bgImage: null,
+  // ── 按钮 ──
+  btnFillType: 0,
+  btnColor: "#1A1A1A",
+  btnImage: null,
+  btnOutlineColor: "#666666",
+  btnOutlineWidth: 4,
+  // ── 摇杆 ──
+  joyBaseFillType: 0,
+  joyBaseColor: "#222222",
+  joyBaseImage: null,
+  joyBaseOutlineColor: "#555555",
+  joyBaseOutlineWidth: 4,
+  joyCapFillType: 0,
+  joyCapColor: "#555555",
+  joyCapImage: null,
+  joyCapOutlineColor: "#777777",
+  joyCapOutlineWidth: 4,
+  // ── 触发区描边 ──
+  joyTriggerOutlineColor: "#666666",
+  joyTriggerOutlineWidth: 4,
+  tpTriggerOutlineColor: "#666666",
+  tpTriggerOutlineWidth: 4,
+  dpadPadTriggerOutlineColor: "#666666",
+  dpadPadTriggerOutlineWidth: 4,
+  linearTriggerBoxOutlineColor: "#888888",
+  linearTriggerBoxOutlineWidth: 4,
+  // ── 触摸板 ──
+  tpFillType: 0,
+  tpColor: "#121212",
+  tpImage: null,
+  tpOutlineColor: "#666666",
+  tpOutlineWidth: 4,
+  // ── 一体十字键 / 自定义按键盘 ──
+  dpadPadFillType: 0,
+  dpadPadColor: "#1A1A1A",
+  dpadPadImage: null,
+  dpadPadOutlineColor: "#666666",
+  dpadPadOutlineWidth: 4,
+  // ── 图标颜色 ──
+  btnIconColor: "#CCCCCC",
+  joyIconColor: "#CCCCCC",
+  tpIconColor: "#666666",
+  dpadPadIconColor: "#CCCCCC",
+  // ── 内容最大尺寸（sp）──
+  iconMaxSize: 24,
 };
+
+// Corer radius / rounding constants from AppearanceApplier.kt (× density).
+export const CORNER_RADIUS_DP = 12; // buttons
+export const TOUCHPAD_RADIUS_DP = 10; // touchpad / mousepad
+export const HANDLE_SIZE_DP = 8;
+export const MARKER_DIST_DP = 4;
+
+// Circle-shaped buttons (AppearanceApplier.isCircleButton).
+const ROUND_IDS = new Set([
+  "btnA", "btnB", "btnX", "btnY",
+  "btnDpadUp", "btnDpadDown", "btnDpadLeft", "btnDpadRight",
+  "btnHome", "btnSelect", "btnMenu", "btnLS", "btnRS", "btnShare", "btnMic",
+]);
+
+function isCircleButton(id) {
+  const b = baseId(id);
+  return ROUND_IDS.has(b) || b.startsWith("btnCustomCircle");
+}
+
+// AppearanceApplier.highlightColor — move `factor` of the way toward white.
+export function highlightColor(color, factor) {
+  const { r, g, b, a } = parseColor(color);
+  const mix = (c) => Math.max(0, Math.min(255, Math.round(c + (255 - c) * factor)));
+  return toCss(mix(r), mix(g), mix(b), a);
+}
+
+function parseColor(color) {
+  if (typeof color !== "string") return { r: 0, g: 0, b: 0, a: 1 };
+  let s = color.trim();
+  if (s.startsWith("#")) {
+    if (s.length === 9) {
+      const a = parseInt(s.slice(1, 3), 16);
+      return { r: parseInt(s.slice(3, 5), 16), g: parseInt(s.slice(5, 7), 16), b: parseInt(s.slice(7, 9), 16), a: a / 255 };
+    }
+    if (s.length === 7) {
+      return { r: parseInt(s.slice(1, 3), 16), g: parseInt(s.slice(3, 5), 16), b: parseInt(s.slice(5, 7), 16), a: 1 };
+    }
+    if (s.length === 4) {
+      const a = parseInt(s[1] + s[1], 16);
+      return { r: parseInt(s[2] + s[2], 16), g: parseInt(s[3] + s[3], 16), b: parseInt(s[4] + s[4], 16), a: a / 255 };
+    }
+  }
+  const m = s.match(/rgba?\(([^)]+)\)/);
+  if (m) {
+    const p = m[1].split(",").map((v) => parseFloat(v));
+    return { r: p[0] || 0, g: p[1] || 0, b: p[2] || 0, a: p.length > 3 ? p[3] : 1 };
+  }
+  return { r: 0, g: 0, b: 0, a: 1 };
+}
+
+function toCss(r, g, b, a) {
+  if (a >= 1) {
+    return "#" + [r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("");
+  }
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// Android content cap: settings.iconMaxSize sp → px (density 1); 100 = unlimited.
+function contentCapPx(appearance) {
+  const sp = appearance.iconMaxSize;
+  if (sp == null || sp >= 100) return Infinity;
+  return Math.max(1, sp);
+}
+
+// Content box: button minus the 10% adaptive padding applied to content controls.
+function contentBox(w, h) {
+  const pad = Math.min(w, h) * 0.1;
+  return { w: Math.max(1, w - pad * 2), h: Math.max(1, h - pad * 2) };
+}
 
 export class GamepadLayout {
   constructor(canvas, callbacks) {
@@ -205,20 +313,25 @@ export class GamepadLayout {
   }
 
   // ── rendering ──
+  // Mirrors com.zyz4.gkme.view.GamepadLayout (background + trigger areas) and
+  // GamepadRenderer (grid + selection) plus each control view's own onDraw.
   render() {
     const ctx = this.ctx;
-    const { cell } = this._layout;
     ctx.save();
     ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
     ctx.clearRect(0, 0, this.cssW, this.cssH);
 
-    const bg = this.appearance.background;
-    if (bg && bg.image) {
-      this._drawCoverImage(bg.image);
-    } else if (bg && bg.color && bg.color !== "rgba(0,0,0,0)") {
-      ctx.fillStyle = bg.color;
+    const app = this.appearance;
+    if (app.bgFillType === 1 && app.bgImage) {
+      this._drawCoverImage(app.bgImage);
+    } else {
+      ctx.fillStyle = app.bgColor || "#000000";
       ctx.fillRect(0, 0, this.cssW, this.cssH);
     }
+
+    // Extended follow-area / linear-trigger outlines drawn under the controls.
+    this._drawFollowAreas();
+    this._drawLinearTriggerBoxes();
 
     if (this.showGrid && this.editMode) this._drawGrid();
 
@@ -242,10 +355,11 @@ export class GamepadLayout {
     ctx.drawImage(img, (this.cssW - w) / 2, (this.cssH - h) / 2, w, h);
   }
 
+  // GamepadRenderer.drawGrid — 1px #787878 lines at gridAlpha (170/255).
   _drawGrid() {
     const ctx = this.ctx;
     const { cell } = this._layout;
-    ctx.strokeStyle = "rgba(80,160,255,0.18)";
+    ctx.strokeStyle = "rgba(120,120,120,0.667)";
     ctx.lineWidth = 1;
     for (let x = 0; x <= GRID_COLS; x++) {
       ctx.beginPath();
@@ -261,6 +375,68 @@ export class GamepadLayout {
     }
   }
 
+  // GamepadRenderer follow-area rectangles (joystick / touchpad / dpadPad / keypad).
+  _drawFollowAreas() {
+    const ctx = this.ctx;
+    const { cell } = this._layout;
+    for (const b of this.buttons) {
+      if (!b.followAreaEnabled) continue;
+      if (b.followAreaW == null || b.followAreaH == null) continue;
+      const bid = baseId(b.id);
+      let color;
+      let width;
+      if (b.isTouchpad || b.isMousepad) {
+        color = this.appearance.tpTriggerOutlineColor;
+        width = this.appearance.tpTriggerOutlineWidth;
+      } else if (b.isDpadPad || b.isKeypad) {
+        color = this.appearance.dpadPadTriggerOutlineColor;
+        width = this.appearance.dpadPadTriggerOutlineWidth;
+      } else if (b.isJoystick) {
+        color = this.appearance.joyTriggerOutlineColor;
+        width = this.appearance.joyTriggerOutlineWidth;
+      } else {
+        continue;
+      }
+      if (!(width > 0)) continue;
+      const l = b.followAreaX * cell;
+      const t = b.followAreaY * cell;
+      const w = b.followAreaW * cell;
+      const h = b.followAreaH * cell;
+      const op = (b.followAreaOpacity == null ? 100 : b.followAreaOpacity) / 100;
+      ctx.save();
+      ctx.globalAlpha *= op;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.strokeRect(l, t, w, h);
+      ctx.restore();
+    }
+  }
+
+  // GamepadRenderer linear-trigger travel boxes (#888888), extended by the travel distance.
+  _drawLinearTriggerBoxes() {
+    const ctx = this.ctx;
+    const { cell } = this._layout;
+    ctx.strokeStyle = this.appearance.linearTriggerBoxOutlineColor;
+    ctx.lineWidth = this.appearance.linearTriggerBoxOutlineWidth;
+    if (!(ctx.lineWidth > 0)) return;
+    for (const b of this.buttons) {
+      if (!b.linearTriggerEnabled) continue;
+      const r = this.gridRect(b);
+      let left = r.x;
+      let top = r.y;
+      let w = r.w;
+      let h = r.h;
+      const travel = (b.travelDistance || 10) * cell;
+      switch (b.slideDirection) {
+        case "UP": top -= travel; h += travel; break;
+        case "LEFT": left -= travel; w += travel; break;
+        case "RIGHT": w += travel; break;
+        default: h += travel; break;
+      }
+      ctx.strokeRect(left, top, w, h);
+    }
+  }
+
   _active(b) {
     if (this.controlActive.get(b.id)) return true;
     const c = getControl(b.id);
@@ -268,14 +444,21 @@ export class GamepadLayout {
     return false;
   }
 
-  _rectPath(x, y, w, h, r) {
+  // Centered shape path (origin at the control centre).
+  _shape(round, w, h, radius) {
     const ctx = this.ctx;
     ctx.beginPath();
+    if (round) {
+      ctx.arc(0, 0, Math.min(w, h) / 2, 0, Math.PI * 2);
+      return;
+    }
+    const x = -w / 2;
+    const y = -h / 2;
+    const r = Math.min(radius, w / 2, h / 2);
     if (r <= 0) {
       ctx.rect(x, y, w, h);
       return;
     }
-    r = Math.min(r, w / 2, h / 2);
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
     ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -293,7 +476,7 @@ export class GamepadLayout {
     if (opacity <= 0) return;
 
     ctx.save();
-    ctx.globalAlpha = opacity;
+    ctx.globalAlpha *= opacity;
     ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
     if (b.rotation) ctx.rotate((b.rotation * Math.PI) / 180);
 
@@ -306,17 +489,20 @@ export class GamepadLayout {
     ctx.restore();
   }
 
+  // ── standard button (AppearanceApplier.applyToButton) ──
   _drawButton(b, r, active) {
     const ctx = this.ctx;
-    const app = this.appearance.button;
+    const app = this.appearance;
     const w = r.w;
     const h = r.h;
-    const isRound = b.roundShape || (b.lockAspect && Math.abs(w - h) < 1);
-    if (b.fillImage) {
+    const round = b.roundShape || isCircleButton(b.id);
+    const radius = round ? Math.min(w, h) / 2 : CORNER_RADIUS_DP;
+
+    if (app.btnFillType === 1 && app.btnImage) {
       ctx.save();
-      this._rectPath(-w / 2, -h / 2, w, h, isRound ? Math.min(w, h) / 2 : Math.min(8, h * 0.25));
+      this._shape(round, w, h, radius);
       ctx.clip();
-      const img = b.fillImage;
+      const img = app.btnImage;
       const iw = img.naturalWidth || img.width;
       const ih = img.naturalHeight || img.height;
       if (iw && ih) {
@@ -325,143 +511,408 @@ export class GamepadLayout {
       }
       ctx.restore();
     } else {
-      ctx.fillStyle = active ? (b.activeColor || app.fillActive) : (b.color || app.fill);
-      this._rectPath(-w / 2, -h / 2, w, h, isRound ? Math.min(w, h) / 2 : Math.min(8, h * 0.25));
+      ctx.fillStyle = active ? highlightColor(app.btnColor, 0.3) : app.btnColor;
+      this._shape(round, w, h, radius);
       ctx.fill();
     }
-    ctx.strokeStyle = b.strokeColor || app.stroke;
-    ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.05);
-    this._rectPath(-w / 2, -h / 2, w, h, isRound ? Math.min(w, h) / 2 : Math.min(8, h * 0.25));
-    ctx.stroke();
 
-    // label
-    let label = "";
-    if (b.isCustom) label = b.customText || "";
-    else if (b.isKeyboard) label = keyboardCaption(b.keyCode, this.keyboardShift);
-    else label = controlLabel(b.id, this.displayMode);
-    if (label) {
-      ctx.fillStyle = b.textColor || app.text;
-      const fs = Math.min(w, h) * (label.length > 2 ? 0.34 : 0.5);
-      ctx.font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, 0, 1);
+    if (app.btnOutlineWidth > 0) {
+      ctx.strokeStyle = active ? highlightColor(app.btnOutlineColor, 0.3) : app.btnOutlineColor;
+      ctx.lineWidth = app.btnOutlineWidth;
+      this._shape(round, w, h, radius);
+      ctx.stroke();
     }
-    if (b.isTrigger && b.linearTriggerEnabled) {
-      // travel indicator
-      ctx.strokeStyle = "rgba(120,180,255,0.7)";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4);
+
+    this._drawButtonContent(b, w, h);
+  }
+
+  _drawButtonContent(b, w, h) {
+    const ctx = this.ctx;
+    const app = this.appearance;
+    const cap = contentCapPx(app);
+    const box = contentBox(w, h);
+    const maxDim = Math.min(box.w, box.h, cap);
+
+    // Settings gear: ImageButton with 8dp padding + CENTER_INSIDE (not adaptive content).
+    if (baseId(b.id) === "btnSettings") {
+      const bw = Math.max(1, w - 16);
+      const bh = Math.max(1, h - 16);
+      const md = Math.min(bw, bh, 24);
+      drawIcon(ctx, "settings", 0, 0, md, bw, bh, "#CCCCCC");
+      return;
+    }
+
+    if (b.isCustom) {
+      this._drawLabel(b.customText || "", w, h, cap, app.btnIconColor, 500);
+      return;
+    }
+    if (b.isKeyboard) {
+      this._drawLabel(keyboardCaption(b.keyCode, this.keyboardShift), w, h, cap, app.btnIconColor, 500);
+      return;
+    }
+    const id = baseId(b.id);
+    if (id === "btnLS" || id === "btnRS") {
+      this._drawLetterIcon(id, w, h, cap, app.btnIconColor);
+      return;
+    }
+    const icon = this._iconFor(b.id);
+    if (icon) {
+      drawIcon(ctx, icon, 0, 0, maxDim, box.w, box.h, app.btnIconColor);
+      return;
+    }
+    const label = controlLabel(b.id, this.displayMode);
+    if (label) this._drawLabel(label, w, h, cap, app.btnIconColor, 500);
+  }
+
+  // LetterIconDrawable — triangle in the top band, L/R letter centered below.
+  _drawLetterIcon(id, w, h, cap, color) {
+    const ctx = this.ctx;
+    const name = id === "btnLS" ? "ls" : "rs";
+    const s = Math.min(w * 0.5, h * 0.24, cap);
+    if (s > 0) {
+      drawIcon(ctx, name, 0, -h / 2 + h * 0.05 + s / 2, s, s, s, color);
+    }
+    const letter = id === "btnLS" ? "L" : "R";
+    this._drawLabel(letter, w, h, Math.min(w * 0.55, h * 0.45, cap), color, 700);
+  }
+
+  // Android auto-fit text capped at iconMaxSize (TextView.applyContentSizeCap).
+  _drawLabel(label, w, h, cap, color, weight) {
+    if (!label) return;
+    const ctx = this.ctx;
+    const box = contentBox(w, h);
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const ref = 100;
+    ctx.font = `${weight || 500} ${ref}px ${UI_FONT}`;
+    const m = ctx.measureText(label);
+    const tw = Math.max(0.01, m.width);
+    const th = Math.max(
+      0.01,
+      (m.actualBoundingBoxAscent || ref * 0.72) + (m.actualBoundingBoxDescent || ref * 0.2)
+    );
+    let fs = Math.min(ref * (box.w / tw), ref * (box.h / th));
+    if (cap !== Infinity) fs = Math.min(fs, cap);
+    ctx.font = `${weight || 500} ${Math.max(1, fs)}px ${UI_FONT}`;
+    ctx.fillText(label, 0, 0);
+  }
+
+  // AppearanceApplier.getIconDrawable + updateButtonLabels.
+  _iconFor(id) {
+    const b = baseId(id);
+    const m = this.displayMode;
+    switch (b) {
+      case "btnSettings": return "settings";
+      case "btnDpadUp": return "arrow_up";
+      case "btnDpadDown": return "arrow_down";
+      case "btnDpadLeft": return "arrow_left";
+      case "btnDpadRight": return "arrow_right";
+      case "btnMic": return "mic";
+      case "btnHome":
+        return m === "XBOX" ? "home_xbox" : m === "SWITCH" ? "home" : "home_playstation";
+      case "btnSelect":
+        return m === "XBOX" ? "view" : m === "SWITCH" ? "minus" : null;
+      case "btnMenu":
+        return m === "XBOX" ? "menu" : m === "SWITCH" ? "plus" : null;
+      case "btnShare":
+        return m === "XBOX" ? "share_xbox" : m === "SWITCH" ? "screenshot_switch" : "touchpad_grid";
+      case "btnA": return m === "PS" ? "ps_cross" : null;
+      case "btnB": return m === "PS" ? "ps_circle" : null;
+      case "btnX": return m === "PS" ? "ps_square" : null;
+      case "btnY": return m === "PS" ? "ps_triangle" : null;
+      default: return null;
     }
   }
 
+  // ── joystick (JoystickView.onDraw) ──
   _drawJoystick(b, r) {
     const ctx = this.ctx;
-    const app = this.appearance.joystick;
-    const d = Math.min(r.w, r.h);
-    const rad = d / 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, rad * 0.92, 0, Math.PI * 2);
-    ctx.fillStyle = app.base;
-    ctx.fill();
-    ctx.lineWidth = Math.max(1, rad * 0.06);
-    ctx.strokeStyle = app.stroke;
-    ctx.stroke();
+    const app = this.appearance;
+    const active = this._active(b);
+    const baseR = Math.min(r.w, r.h) / 2;
+    const knobR = baseR * 0.32;
 
+    // Base fill
+    if (app.joyBaseFillType === 1 && app.joyBaseImage) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, baseR, 0, Math.PI * 2);
+      ctx.clip();
+      const img = app.joyBaseImage;
+      const iw = img.naturalWidth || img.width;
+      const ih = img.naturalHeight || img.height;
+      if (iw && ih) {
+        const s = Math.max((baseR * 2) / iw, (baseR * 2) / ih);
+        ctx.drawImage(img, (-iw * s) / 2, (-ih * s) / 2, iw * s, ih * s);
+      }
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, baseR, 0, Math.PI * 2);
+      ctx.fillStyle = active ? highlightColor(app.joyBaseColor, 0.3) : app.joyBaseColor;
+      ctx.fill();
+    }
+    // Base outline
+    if (app.joyBaseOutlineWidth > 0) {
+      ctx.beginPath();
+      ctx.arc(0, 0, baseR - app.joyBaseOutlineWidth / 2, 0, Math.PI * 2);
+      ctx.strokeStyle = active ? highlightColor(app.joyBaseOutlineColor, 0.3) : app.joyBaseOutlineColor;
+      ctx.lineWidth = app.joyBaseOutlineWidth;
+      ctx.stroke();
+    }
+
+    // Cap
     const vis = this.stickVisual[b.axis] || { x: 0, y: 0 };
-    const kx = (vis.x / 32767) * rad * 0.6;
-    const ky = (vis.y / 32767) * rad * 0.6;
-    const thumbR = rad * 0.42;
-    ctx.beginPath();
-    ctx.arc(kx, ky, thumbR, 0, Math.PI * 2);
-    ctx.fillStyle = app.thumb;
-    ctx.fill();
-    ctx.lineWidth = Math.max(1, rad * 0.04);
-    ctx.strokeStyle = app.thumbStroke;
-    ctx.stroke();
+    const maxD = baseR - knobR;
+    const kx = (vis.x / 32767) * maxD;
+    const ky = (vis.y / 32767) * maxD;
+    if (app.joyCapFillType === 1 && app.joyCapImage) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(kx, ky, knobR, 0, Math.PI * 2);
+      ctx.clip();
+      const img = app.joyCapImage;
+      const iw = img.naturalWidth || img.width;
+      const ih = img.naturalHeight || img.height;
+      if (iw && ih) {
+        const s = Math.max((knobR * 2) / iw, (knobR * 2) / ih);
+        ctx.drawImage(img, kx - (iw * s) / 2, ky - (ih * s) / 2, iw * s, ih * s);
+      }
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(kx, ky, knobR, 0, Math.PI * 2);
+      ctx.fillStyle = active ? highlightColor(app.joyCapColor, 0.3) : app.joyCapColor;
+      ctx.fill();
+    }
+    if (app.joyCapOutlineWidth > 0) {
+      ctx.beginPath();
+      ctx.arc(kx, ky, knobR - app.joyCapOutlineWidth / 2, 0, Math.PI * 2);
+      ctx.strokeStyle = active ? highlightColor(app.joyCapOutlineColor, 0.3) : app.joyCapOutlineColor;
+      ctx.lineWidth = app.joyCapOutlineWidth;
+      ctx.stroke();
+    }
 
+    // Dead-zone (yellow #FFEE00) / reverse dead-zone (blue #0088FF) indicators.
     if (b.deadZone > 0) {
       ctx.beginPath();
-      ctx.arc(0, 0, rad * 0.92 * (b.deadZone / 100), 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,210,80,0.7)";
+      ctx.arc(0, 0, baseR * (b.deadZone / 100), 0, Math.PI * 2);
+      ctx.strokeStyle = "#FFEE00";
+      ctx.lineWidth = 3;
       ctx.stroke();
     }
     if (b.reverseDeadZone > 0) {
       ctx.beginPath();
-      ctx.arc(0, 0, rad * 0.92 * (1 - b.reverseDeadZone / 100), 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(80,160,255,0.7)";
+      ctx.arc(0, 0, baseR * (b.reverseDeadZone / 100), 0, Math.PI * 2);
+      ctx.strokeStyle = "#0088FF";
+      ctx.lineWidth = 3;
       ctx.stroke();
     }
   }
 
+  // ── integrated D-pad (DpadPadView.onDraw, centerShape = SQUARE) ──
   _drawDpadPad(b, r, active) {
     const ctx = this.ctx;
-    const app = this.appearance.button;
-    const w = r.w;
-    const h = r.h;
+    const app = this.appearance;
+    const side = Math.min(r.w, r.h);
+    const radius = side / 2;
+    const third = side / 3;
+    const ox = -side / 2;
+    const oy = -side / 2;
     const hat = b._hat || 0;
-    const armW = Math.min(w, h) * 0.34;
-    const fill = (on) => (on ? app.fillActive : app.fill);
 
-    // vertical bar (up/down)
+    // Circle fill
     ctx.beginPath();
-    ctx.rect(-armW / 2, -h / 2, armW, h);
-    ctx.fillStyle = fill(hat & (DPAD.UP | DPAD.DOWN));
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fillStyle = app.dpadPadColor;
     ctx.fill();
-    ctx.strokeStyle = app.stroke;
-    ctx.lineWidth = Math.max(1, w * 0.012);
-    ctx.stroke();
 
-    // horizontal bar (left/right)
-    ctx.beginPath();
-    ctx.rect(-w / 2, -armW / 2, w, armW);
-    ctx.fillStyle = fill(hat & (DPAD.LEFT | DPAD.RIGHT));
-    ctx.fill();
-    ctx.stroke();
+    // Highlight the active 3×3 cell, clipped to the circle.
+    if (hat) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.clip();
+      const c = this._dpadCellRect(hat, ox, oy, third);
+      if (c) {
+        ctx.fillStyle = highlightColor(app.dpadPadColor, 0.3);
+        ctx.fillRect(c.x, c.y, c.w, c.h);
+      }
+      ctx.restore();
+    }
 
-    // centre
-    ctx.beginPath();
-    ctx.arc(0, 0, armW * 0.52, 0, Math.PI * 2);
-    ctx.fillStyle = fill(active && !hat);
-    ctx.fill();
-    ctx.stroke();
+    // Direction arrows in the grid cells.
+    const cap = contentCapPx(app);
+    const a = third;
+    const arrowSize = Math.min(a * 0.55, a * 0.55, cap);
+    if (arrowSize > 0) {
+      const c = app.dpadPadIconColor;
+      drawIcon(ctx, "arrow_up", ox + 1.5 * a, oy + 0.5 * a, arrowSize, arrowSize, arrowSize, c);
+      drawIcon(ctx, "arrow_down", ox + 1.5 * a, oy + 2.5 * a, arrowSize, arrowSize, arrowSize, c);
+      drawIcon(ctx, "arrow_left", ox + 0.5 * a, oy + 1.5 * a, arrowSize, arrowSize, arrowSize, c);
+      drawIcon(ctx, "arrow_right", ox + 2.5 * a, oy + 1.5 * a, arrowSize, arrowSize, arrowSize, c);
+    }
+
+    // Border + separators (same co/w).
+    if (app.dpadPadOutlineWidth > 0) {
+      ctx.strokeStyle = app.dpadPadOutlineColor;
+      ctx.lineWidth = app.dpadPadOutlineWidth;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.moveTo(ox + a, oy); ctx.lineTo(ox + a, oy + side);
+      ctx.moveTo(ox + 2 * a, oy); ctx.lineTo(ox + 2 * a, oy + side);
+      ctx.moveTo(ox, oy + a); ctx.lineTo(ox + side, oy + a);
+      ctx.moveTo(ox, oy + 2 * a); ctx.lineTo(ox + side, oy + 2 * a);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
+  _dpadCellRect(bits, ox, oy, a) {
+    const U = DPAD.UP, D = DPAD.DOWN, L = DPAD.LEFT, R = DPAD.RIGHT;
+    let col = -1, row = -1;
+    switch (bits) {
+      case U: row = 0; col = 1; break;
+      case D: row = 2; col = 1; break;
+      case L: row = 1; col = 0; break;
+      case R: row = 1; col = 2; break;
+      case U | L: row = 0; col = 0; break;
+      case U | R: row = 0; col = 2; break;
+      case D | L: row = 2; col = 0; break;
+      case D | R: row = 2; col = 2; break;
+      default: return null;
+    }
+    return { x: ox + col * a, y: oy + row * a, w: a, h: a };
+  }
+
+  // ── custom keypad (CustomKeypadView.onDraw, 4-direction wedge mode) ──
   _drawKeypad(b, r) {
     const ctx = this.ctx;
-    const app = this.appearance.button;
-    const w = r.w;
-    const h = r.h;
-    ctx.fillStyle = app.fill;
-    ctx.strokeStyle = app.stroke;
-    ctx.lineWidth = 1;
+    const app = this.appearance;
+    const side = Math.min(r.w, r.h);
+    const radius = side / 2;
+    const half = side * 0.20;
+    const d = radius * 0.70710678;
+    const region = b._region;
+
+    // Ring fill (circle minus centre square).
     ctx.beginPath();
-    ctx.arc(0, 0, Math.min(w, h) / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // 4 wedges
-    const texts = b.keypadTexts || ["上", "下", "左", "右", "中", "左上", "右上", "左下", "右下"];
-    const label = texts[b._region != null ? b._region : 4] || "";
-    ctx.fillStyle = app.text;
-    const fs = Math.min(w, h) * 0.34;
-    ctx.font = `600 ${fs}px system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label, 0, 1);
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.rect(-half, -half, half * 2, half * 2);
+    ctx.fillStyle = app.dpadPadColor;
+    ctx.fill("evenodd");
+
+    if (region != null && region >= 0 && region <= 3) {
+      ctx.fillStyle = highlightColor(app.dpadPadColor, 0.3);
+      ctx.beginPath();
+      this._keypadWedge(ctx, region, half, d, radius);
+      ctx.fill();
+    }
+    ctx.fillStyle = app.dpadPadColor;
+    ctx.fillRect(-half, -half, half * 2, half * 2);
+
+    if (app.dpadPadOutlineWidth > 0) {
+      ctx.strokeStyle = app.dpadPadOutlineColor;
+      ctx.lineWidth = app.dpadPadOutlineWidth;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-half, -half); ctx.lineTo(-d, -d);
+      ctx.moveTo(half, -half); ctx.lineTo(d, -d);
+      ctx.moveTo(-half, half); ctx.lineTo(-d, d);
+      ctx.moveTo(half, half); ctx.lineTo(d, d);
+      ctx.stroke();
+      ctx.strokeRect(-half, -half, half * 2, half * 2);
+    }
+
+    // Region texts (0=up,1=down,2=left,3=right,4=centre).
+    const texts = b.keypadTexts || ["上", "下", "左", "右", "中"];
+    const cap = contentCapPx(app);
+    const box = radius * 0.667;
+    const off = radius * 0.58;
+    this._keypadText(texts[0], 0, -off, box, cap, app.dpadPadIconColor);
+    this._keypadText(texts[1], 0, off, box, cap, app.dpadPadIconColor);
+    this._keypadText(texts[2], -off, 0, box, cap, app.dpadPadIconColor);
+    this._keypadText(texts[3], off, 0, box, cap, app.dpadPadIconColor);
+    this._keypadText(texts[4], 0, 0, half * 2, cap, app.dpadPadIconColor);
   }
 
+  _keypadWedge(ctx, region, c, d, radius) {
+    ctx.beginPath();
+    if (region === 0) { // up
+      ctx.moveTo(c, -c); ctx.lineTo(-c, -c); ctx.lineTo(-d, -d);
+      ctx.arc(0, 0, radius, Math.PI * 1.25, Math.PI * 1.75);
+      ctx.closePath();
+    } else if (region === 1) { // down
+      ctx.moveTo(-c, c); ctx.lineTo(c, c); ctx.lineTo(d, d);
+      ctx.arc(0, 0, radius, Math.PI * 0.25, Math.PI * 0.75);
+      ctx.closePath();
+    } else if (region === 2) { // left
+      ctx.moveTo(-c, -c); ctx.lineTo(-c, c); ctx.lineTo(-d, d);
+      ctx.arc(0, 0, radius, Math.PI * 0.75, Math.PI * 1.25);
+      ctx.closePath();
+    } else { // right
+      ctx.moveTo(c, -c); ctx.lineTo(d, -d);
+      ctx.arc(0, 0, radius, Math.PI * 1.75, Math.PI * 0.25);
+      ctx.lineTo(c, c);
+      ctx.closePath();
+    }
+  }
+
+  _keypadText(text, cx, cy, box, cap, color) {
+    if (!text) return;
+    const ctx = this.ctx;
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const ref = 100;
+    ctx.font = `500 ${ref}px ${UI_FONT}`;
+    const m = ctx.measureText(text);
+    const tw = Math.max(0.01, m.width);
+    const th = Math.max(0.01, (m.actualBoundingBoxAscent || ref * 0.72) + (m.actualBoundingBoxDescent || ref * 0.2));
+    let fs = Math.min(ref * (box * 0.8) / tw, ref * (box * 0.9) / th);
+    if (cap !== Infinity) fs = Math.min(fs, cap);
+    ctx.font = `500 ${Math.max(1, fs)}px ${UI_FONT}`;
+    ctx.fillText(text, cx, cy);
+  }
+
+  // ── touchpad / mousepad (AppearanceApplier.applyToTouchpad) ──
   _drawPad(b, r) {
     const ctx = this.ctx;
-    const app = this.appearance.touchpad;
+    const app = this.appearance;
     const w = r.w;
     const h = r.h;
-    ctx.fillStyle = b.color || app.fill;
-    this._rectPath(-w / 2, -h / 2, w, h, Math.min(10, h * 0.12));
-    ctx.fill();
-    ctx.strokeStyle = app.stroke;
-    ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.02);
-    this._rectPath(-w / 2, -h / 2, w, h, Math.min(10, h * 0.12));
-    ctx.stroke();
+    if (app.tpFillType === 1 && app.tpImage) {
+      ctx.save();
+      this._shape(false, w, h, TOUCHPAD_RADIUS_DP);
+      ctx.clip();
+      const img = app.tpImage;
+      const iw = img.naturalWidth || img.width;
+      const ih = img.naturalHeight || img.height;
+      if (iw && ih) {
+        const s = Math.max(w / iw, h / ih);
+        ctx.drawImage(img, (-iw * s) / 2, (-ih * s) / 2, iw * s, ih * s);
+      }
+      ctx.restore();
+    } else {
+      ctx.fillStyle = b.color || app.tpColor;
+      this._shape(false, w, h, TOUCHPAD_RADIUS_DP);
+      ctx.fill();
+    }
+    if (app.tpOutlineWidth > 0) {
+      ctx.strokeStyle = app.tpOutlineColor;
+      ctx.lineWidth = app.tpOutlineWidth;
+      this._shape(false, w, h, TOUCHPAD_RADIUS_DP);
+      ctx.stroke();
+    }
 
     if (b._touchPoints) {
       for (const p of b._touchPoints) {
@@ -469,29 +920,48 @@ export class GamepadLayout {
         const py = (p.ny - 0.5) * h;
         ctx.beginPath();
         ctx.arc(px, py, Math.min(w, h) * 0.05, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(120,180,255,0.85)";
+        ctx.fillStyle = "rgba(204,204,204,0.85)";
         ctx.fill();
       }
     }
   }
 
+  // ── selection overlay (GamepadRenderer.drawSelectionOverlay) ──
   _drawSelection(b) {
     if (!b) return;
     const ctx = this.ctx;
+    const { cell } = this._layout;
     const r = this.gridRect(b);
     ctx.save();
     ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
-    ctx.strokeStyle = "#4ea1ff";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-    ctx.restore();
 
-    const hs = 16;
-    ctx.save();
-    ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
-    ctx.fillStyle = "#4ea1ff";
-    ctx.fillRect(r.x + r.w - hs / 2, r.y + r.h - hs / 2, hs, hs);
+    if (!this._adjustingFollowArea) {
+      ctx.strokeStyle = "rgba(0,255,0,0.804)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+      const h = HANDLE_SIZE_DP;
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(r.x + r.w - h, r.y + r.h - h, h, h);
+    }
+
+    if (baseId(b.id) !== "btnSettings" && !this._adjustingFollowArea) {
+      const dist = MARKER_DIST_DP;
+      let mx, my, angle;
+      const rot = ((b.rotation || 0) % 360 + 360) % 360;
+      if (rot === 90) { mx = r.x + r.w + dist; my = r.y + r.h / 2; angle = 90; }
+      else if (rot === 180) { mx = r.x + r.w / 2; my = r.y + r.h + dist; angle = 180; }
+      else if (rot === 270) { mx = r.x - dist; my = r.y + r.h / 2; angle = 270; }
+      else { mx = r.x + r.w / 2; my = r.y - dist; angle = 0; }
+      ctx.save();
+      ctx.translate(mx, my);
+      ctx.rotate((angle * Math.PI) / 180);
+      ctx.fillStyle = "#FF0000";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `500 14px ${UI_FONT}`;
+      ctx.fillText("上", 0, 0);
+      ctx.restore();
+    }
     ctx.restore();
   }
 
@@ -632,7 +1102,7 @@ export class GamepadLayout {
       this._setStick(info.axis, 0, 0);
       this.controlActive.set(info.id, false);
     } else if (info.kind === "dpad") {
-      info.b._hat = 1;
+      info.b._hat = 0;
       this.cb.onDpad && this.cb.onDpad(0);
       this.controlActive.set(info.id, false);
     } else if (info.kind === "keypad") {

@@ -205,28 +205,43 @@ export function lockAspectFor(id) {
   return c.lockAspect !== false;
 }
 
-// ── Display-mode labels ──
+// ── Display-mode labels (mirrors MainActivityControls.updateButtonLabels) ──
 export const DISPLAY_MODES = ["XBOX", "PS", "SWITCH"];
 
+// PS face buttons carry icons, not text (see layout.js _iconFor), so their label is empty.
 const FACE_LABELS = {
-  btnA: { XBOX: "A", PS: "✕", SWITCH: "B" },
-  btnB: { XBOX: "B", PS: "○", SWITCH: "A" },
-  btnX: { XBOX: "X", PS: "□", SWITCH: "Y" },
-  btnY: { XBOX: "Y", PS: "△", SWITCH: "X" },
+  btnA: { XBOX: "A", PS: "", SWITCH: "B" },
+  btnB: { XBOX: "B", PS: "", SWITCH: "A" },
+  btnX: { XBOX: "X", PS: "", SWITCH: "Y" },
+  btnY: { XBOX: "Y", PS: "", SWITCH: "X" },
 };
 
 export function controlLabel(id, displayMode) {
   const b = baseId(id);
-  if (FACE_LABELS[b]) return FACE_LABELS[b][displayMode] || FACE_LABELS[b].XBOX;
+  if (FACE_LABELS[b]) return FACE_LABELS[b][displayMode] ?? FACE_LABELS[b].XBOX;
+
+  // Bumpers / triggers.
+  const bumpers = {
+    btnLB: { XBOX: "LB", PS: "L1", SWITCH: "L" },
+    btnRB: { XBOX: "RB", PS: "R1", SWITCH: "R" },
+    btnLT: { XBOX: "LT", PS: "L2", SWITCH: "ZL" },
+    btnRT: { XBOX: "RT", PS: "R2", SWITCH: "ZR" },
+  };
+  if (bumpers[b]) return bumpers[b][displayMode] || bumpers[b].XBOX;
+
+  // Select / menu: XBOX & SWITCH draw an icon (empty text); PS shows text.
+  if (b === "btnSelect") return displayMode === "PS" ? "SHARE" : "";
+  if (b === "btnMenu") return displayMode === "PS" ? "OPTION" : "";
+
+  // Icon-only gamepad buttons (drawn via _iconFor / letter icon).
+  if (b === "btnHome" || b === "btnShare" || b === "btnLS" || b === "btnRS" || b === "btnMic") return "";
+  // Direction buttons draw arrow icons.
+  if (b.startsWith("btnDpad")) return "";
+
   const labels = {
-    btnLB: "LB", btnRB: "RB", btnLT: "LT", btnRT: "RT",
-    btnSelect: displayMode === "SWITCH" ? "−" : displayMode === "PS" ? "SHARE" : "⧉",
-    btnMenu: displayMode === "SWITCH" ? "+" : displayMode === "PS" ? "OPTIONS" : "≡",
-    btnHome: "HOME", btnShare: "∇", btnLS: "L3", btnRS: "R3", btnMic: "MIC",
     btnMouseLMB: "LMB", btnMouseRMB: "RMB", btnMouseMMB: "MMB",
     btnMouseBack: "BACK", btnMouseForward: "FWD",
   };
   if (labels[b] !== undefined) return labels[b];
-  if (b.startsWith("btnDpad")) return { Up: "↑", Down: "↓", Left: "←", Right: "→" }[b.slice(7)];
   return "";
 }
