@@ -96,6 +96,22 @@ export function setActivePresetName(name) {
   localStorage.setItem(ACTIVE_PRESET_KEY, name);
 }
 
+// Minimum time (ms) an input stays "on" after being activated. This must be
+// longer than the host/game sampling interval so a fast tap is not skipped
+// between two of the receiver's polls (1 frame at 125Hz is only ~8ms, which a
+// 60Hz poller can miss entirely).
+const MIN_PRESS_MS = 60;
+
+// Iterate the individual bits set in a uint32 mask.
+function forEachBit(mask, fn) {
+  let m = mask >>> 0;
+  while (m) {
+    const b = (m & -m) >>> 0;
+    fn(b);
+    m = (m & (m - 1)) >>> 0;
+  }
+}
+
 // ── Live input state ──
 // Aggregates touch controls, physical controller forwarding and keyboard/mouse
 // input into one GamepadInput-shaped snapshot.
@@ -126,6 +142,59 @@ export class InputState {
     this._mouseGesture = 0;
     this._touchDpad = 0;
     this._physicalDpad = 0;
+    // Time-based holds: anything activated since the last send stays "on" for
+    // MIN_PRESS_MS so a fast press+release still reaches the host as a press.
+    this._btnHold = new Map();  // button/custom bit -> expiry timestamp
+    this._dpadHold = new Map(); // dpad direction bit -> expiry timestamp
+    this._keyHold = new Map();  // keyboard scan code -> expiry timestamp
+    this._modHold = new Map();  // modifier bit -> expiry timestamp
+    this._lHoldUntil = 0;
+    this._lHoldVal = 0;
+    this._rHoldUntil = 0;
+    this._rHoldVal = 0;
+    // Effective hold window; the app raises this to >= 2 send intervals.
+    this.minPressMs = MIN_PRESS_MS;
+  }
+
+  holdButtons(bits) {
+    const until = performance.now() + this.minPressMs;
+    forEachBit(bits, (b) => this._btnHold.set(b, until));
+  }
+
+  holdDpad(bits) {
+    const until = performance.now() + this.minPressMs;
+    forEachBit(bits, (b) => this._dpadHold.set(b, until));
+  }
+
+  holdKeys(codes) {
+    const until = performance.now() + this.minPressMs;
+    for (const c of codes) this._keyHold.set(c, until);
+  }
+
+  holdModifier(bits) {
+    const until = performance.now() + this.minPressMs;
+    forEachBit(bits, (b) => this._modHold.set(b, until));
+  }
+
+  holdTrigger(which, value) {
+    if (!value) return;
+    const until = performance.now() + this.minPressMs;
+    if (which === "left") {
+      this._lHoldUntil = until;
+      this._lHoldVal = Math.max(this._lHoldVal, value);
+    } else {
+      this._rHoldUntil = until;
+      this._rHoldVal = Math.max(this._rHoldVal, value);
+    }
+  }
+
+  _liveHoldMask(map, now) {
+    let mask = 0;
+    for (const [b, exp] of map) {
+      if (now < exp) mask |= b;
+      else map.delete(b);
+    }
+    return mask >>> 0;
   }
 
   recomputeButtons() {
@@ -135,23 +204,35 @@ export class InputState {
 
   toInput() {
     this.recomputeButtons();
+    const now = performance.now();
+    const heldButtons = this._liveHoldMask(this._btnHold, now);
+    const heldDpad = this._liveHoldMask(this._dpadHold, now);
+    const heldMods = this._liveHoldMask(this._modHold, now);
+    const scanCodes = Array.from(this.kbKeys);
+    for (const [code, exp] of this._keyHold) {
+      if (now < exp) {
+        if (!this.kbKeys.has(code)) scanCodes.push(code);
+      } else {
+        this._keyHold.delete(code);
+      }
+    }
     return {
-      buttons: this.buttons,
-      dpad: this.dpad,
+      buttons: (this.buttons | heldButtons) >>> 0,
+      dpad: (this.dpad | heldDpad) >>> 0,
       leftStickX: this.leftStickX,
       leftStickY: this.leftStickY,
       rightStickX: this.rightStickX,
       rightStickY: this.rightStickY,
-      leftTrigger: this.leftTrigger,
-      rightTrigger: this.rightTrigger,
+      leftTrigger: Math.max(this.leftTrigger, now < this._lHoldUntil ? this._lHoldVal : 0),
+      rightTrigger: Math.max(this.rightTrigger, now < this._rHoldUntil ? this._rHoldVal : 0),
       mouseDx: this.mouseDx,
       mouseDy: this.mouseDy,
       mouseWheel: this.mouseWheel,
       mousePan: this.mousePan,
       mouseButtons: this.mouseButtons,
       touches: this.touches,
-      scanCodes: Array.from(this.kbKeys),
-      modifiers: this.kbModifiers,
+      scanCodes,
+      modifiers: (this.kbModifiers | heldMods) >>> 0,
     };
   }
 }
