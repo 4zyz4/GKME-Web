@@ -583,7 +583,7 @@ export class GamepadLayout {
     if (b.isJoystick) this._drawJoystick(b, r);
     else if (b.isDpadPad) this._drawDpadPad(b, r, active);
     else if (b.isKeypad) this._drawKeypad(b, r);
-    else if (b.isTouchpad || b.isMousepad) this._drawPad(b, r);
+    else if (b.isTouchpad || b.isMousepad) this._drawPad(b, r, active);
     else this._drawButton(b, r, active);
 
     ctx.restore();
@@ -1013,7 +1013,7 @@ export class GamepadLayout {
   }
 
   // ── touchpad / mousepad (AppearanceApplier.applyToTouchpad) ──
-  _drawPad(b, r) {
+  _drawPad(b, r, active) {
     const ctx = this.ctx;
     const app = this.appearance;
     const w = r.w;
@@ -1029,14 +1029,19 @@ export class GamepadLayout {
         const s = Math.max(w / iw, h / ih);
         ctx.drawImage(img, (-iw * s) / 2, (-ih * s) / 2, iw * s, ih * s);
       }
+      if (active) {
+        ctx.fillStyle = "rgba(255,255,255,0.235)";
+        this._shape(false, w, h, TOUCHPAD_RADIUS_DP);
+        ctx.fill();
+      }
       ctx.restore();
     } else {
-      ctx.fillStyle = b.color || app.tpColor;
+      ctx.fillStyle = active ? highlightColor(b.color || app.tpColor, 0.3) : b.color || app.tpColor;
       this._shape(false, w, h, TOUCHPAD_RADIUS_DP);
       ctx.fill();
     }
     if (app.tpOutlineWidth > 0) {
-      ctx.strokeStyle = app.tpOutlineColor;
+      ctx.strokeStyle = active ? highlightColor(app.tpOutlineColor, 0.3) : app.tpOutlineColor;
       ctx.lineWidth = app.tpOutlineWidth;
       this._shape(false, w, h, TOUCHPAD_RADIUS_DP);
       ctx.stroke();

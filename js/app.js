@@ -383,11 +383,11 @@ class App {
       // Physical sticks only override the virtual ones when the touch stick is idle.
       if (!this.layout.controlActive.get("leftJoystick")) {
         this.state.leftStickX = Math.round(lx * 32767);
-        this.state.leftStickY = Math.round(-ly * 32767);
+        this.state.leftStickY = Math.round(ly * 32767);
       }
       if (!this.layout.controlActive.get("rightJoystick")) {
         this.state.rightStickX = Math.round(rx * 32767);
-        this.state.rightStickY = Math.round(-ry * 32767);
+        this.state.rightStickY = Math.round(ry * 32767);
       }
       if (!this.layout.controlActive.get("btnLT")) this.state.leftTrigger = lt;
       if (!this.layout.controlActive.get("btnRT")) this.state.rightTrigger = rt;
