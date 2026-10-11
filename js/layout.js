@@ -142,6 +142,15 @@ export const MARKER_DIST_DP = 4;
 // Fallback extrapolation frame for 快速响应模式 (ButtonPosition.PREDICTION_FRAME_MS).
 const PREDICTION_FRAME_MS = 16;
 
+// ── 摇杆触摸板（速度）模式常量，镜像 JoystickView.kt ──
+// 摇杆偏移 = 手指速度 × 该时间常数（再按最大行程归一化、乘灵敏度）。
+// 100% 灵敏度下，手指以当前速度再移动 0.1s 的距离恰好对应满量程。
+const VELOCITY_TIME_CONSTANT = 0.1;
+// 尚未识别到采样率时，归零看门狗使用的兜底采样间隔（ms）。
+const MIN_SAMPLE_INTERVAL_MS = 2;
+// 手指停下后等待多少个采样间隔归零回中（至少 1 个间隔）。
+const VELOCITY_RESET_INTERVALS = 2;
+
 // Circle-shaped buttons (AppearanceApplier.isCircleButton).
 const ROUND_IDS = new Set([
   "btnA", "btnB", "btnX", "btnY",
@@ -1475,7 +1484,7 @@ export class GamepadLayout {
       if (info.b._tapTime && Math.hypot(px - info.b._tapX, py - info.b._tapY) > 30) {
         info.b._tapTime = 0;
       }
-      this._updateStick(e.pointerId, px, py);
+      this._updateStick(e.pointerId, px, py, e);
     }
     else if (info.kind === "dpad") this._updateDpad(e.pointerId, px, py);
     else if (info.kind === "keypad") this._updateKeypad(e.pointerId, px, py);
@@ -1493,6 +1502,7 @@ export class GamepadLayout {
     this._pointers.delete(e.pointerId);
 
     if (info.kind === "stick") {
+      if (info.vel && info.vel.timer) clearTimeout(info.vel.timer);
       this._setStick(info.axis, 0, 0);
       this.controlActive.set(info.id, false);
       info.b._followDx = 0;
@@ -1625,16 +1635,32 @@ export class GamepadLayout {
     this._maybeDoubleTap(b, px, py, true, Infinity, () => {
       this._emitBit(b, b.axis === "left" ? BIT.L3 : BIT.R3, true);
     });
-    this._pointers.set(e.pointerId, {
+    const info = {
       id: b.id, kind: "stick", axis: b.axis, b,
-      follow: !!follow, cx: px, cy: py,
-    });
-    this._updateStick(e.pointerId, px, py);
+      follow: !!follow, cx: px, cy: py, pointerId: e.pointerId,
+    };
+    this._pointers.set(e.pointerId, info);
+    if (b.touchpadMode) {
+      // 触摸板模式：DOWN 只记录起点，摇杆保持回中，等 MOVE 产生速度后再偏移。
+      info.vel = { lx: px, ly: py, lt: 0, vx: 0, vy: 0, interval: 0, timer: 0 };
+      const r = this.gridRect(b);
+      info.b._followDx = follow ? px - (r.x + r.w / 2) : 0;
+      info.b._followDy = follow ? py - (r.y + r.h / 2) : 0;
+      this._setStick(b.axis, 0, 0);
+      this.controlActive.set(b.id, false);
+      this.render();
+      return;
+    }
+    this._updateStick(e.pointerId, px, py, e);
   }
 
-  _updateStick(pointerId, px, py) {
+  _updateStick(pointerId, px, py, e) {
     const info = this._pointers.get(pointerId);
     if (!info) return;
+    if (info.b.touchpadMode) {
+      this._updateStickVelocity(info, px, py, e);
+      return;
+    }
     const r = this.gridRect(info.b);
     // Follow-area mode re-centres the stick at the touch point.
     const cx = info.follow ? info.cx : r.x + r.w / 2;
@@ -1672,6 +1698,110 @@ export class GamepadLayout {
     // (HID stick Y: min = up, max = down).
     this._setStick(info.axis, Math.round(clamp(nx) * 32767), Math.round(clamp(ny) * 32767));
     this.render();
+  }
+
+  // 触摸板（速度）模式：把相邻触摸样本算出的瞬时速度映射为摇杆偏移，
+  // 速度归零（看门狗触发）时摇杆回中。镜像 JoystickView.sampleTouchVelocity。
+  _updateStickVelocity(info, px, py, e) {
+    const vel = info.vel;
+    if (!vel) return;
+    const now = e && Number.isFinite(e.timeStamp) ? e.timeStamp : performance.now();
+    if (vel.lt <= 0) {
+      // 首个 MOVE 只做种子：DOWN→首次 MOVE 的间隔不代表触控采样间隔。
+      vel.lx = px;
+      vel.ly = py;
+      vel.lt = now;
+      return;
+    }
+    const dt = Math.max(1, now - vel.lt);
+    // 触控采样率识别：夹取后做 EMA 平滑，供归零看门狗自适应。
+    const clamped = Math.max(MIN_SAMPLE_INTERVAL_MS, Math.min(50, dt));
+    vel.interval = vel.interval <= 0 ? clamped : vel.interval * 0.75 + clamped * 0.25;
+    vel.vx = ((px - vel.lx) / dt) * 1000;
+    vel.vy = ((py - vel.ly) / dt) * 1000;
+    vel.lx = px;
+    vel.ly = py;
+    vel.lt = now;
+    this._applyStickVelocity(info.b, vel.vx, vel.vy);
+    this._scheduleVelocityReset(info);
+  }
+
+  // JoystickView.applyVelocity：速度矢量 → 归一化幅度 → 死区/反死区/曲线 → 摇杆输出。
+  _applyStickVelocity(b, vx, vy) {
+    const r = this.gridRect(b);
+    const baseR = Math.min(r.w, r.h) / 2;
+    const knobR = baseR * 0.32;
+    const maxD = baseR - knobR;
+    if (maxD <= 0) {
+      this._setStick(b.axis, 0, 0);
+      return;
+    }
+    const speed = Math.hypot(vx, vy);
+    const sens = (b.joystickSensitivity || 100) / 100;
+    const rawNorm = ((speed * VELOCITY_TIME_CONSTANT) / maxD) * sens;
+    const normalized = Math.min(1, rawNorm);
+    const afterCurve = this._shapeNormalized(b, normalized);
+    const dirScale = speed > 0 ? afterCurve / speed : 0;
+    const nx = vx * dirScale;
+    const ny = vy * dirScale;
+    const clamp = (v) => Math.max(-1, Math.min(1, v));
+    this.controlActive.set(b.id, Math.hypot(nx, ny) > 0.001);
+    // Y is emitted screen-down-positive to match the host / Android convention
+    // (HID stick Y: min = up, max = down).
+    this._setStick(b.axis, Math.round(clamp(nx) * 32767), Math.round(clamp(ny) * 32767));
+    this.render();
+  }
+
+  // 死区 → 反死区 → 灵敏度曲线，输入/输出均为归一化量 (0..1)。
+  _shapeNormalized(b, normalized) {
+    const dz = Math.max(0, Math.min(0.99, (b.deadZone || 0) / 100));
+    const afterDeadZone = normalized <= dz ? 0 : (normalized - dz) / (1 - dz);
+    const rdz = Math.max(0, Math.min(0.99, (b.reverseDeadZone || 0) / 100));
+    // 死区优先：死区内恒输出 0，反死区只在死区之外抬升下限。
+    const afterReverseDeadZone = afterDeadZone === 0 ? 0 : afterDeadZone * (1 - rdz) + rdz;
+    return this._evaluateCurve(b.sensitivityCurve, afterReverseDeadZone);
+  }
+
+  // SensitivityCurve.evaluate 的网页兜底：曲线编辑器在网页版未提供，曲线恒为 null，
+  // 此时为恒等映射；若将来携带曲线则按隐式锚点 (0,0)/(1,1) 做分段线性插值。
+  _evaluateCurve(curve, t) {
+    const x = Math.max(0, Math.min(1, t));
+    if (!curve || curve.length < 2) return x;
+    const pts = [[0, 0]];
+    for (let i = 0; i + 1 < curve.length; i += 2) {
+      const cx = Math.max(0, Math.min(1, curve[i]));
+      const cy = Math.max(0, Math.min(1, curve[i + 1]));
+      if (cx > 1e-6 && cx < 1 - 1e-6) pts.push([cx, cy]);
+    }
+    pts.push([1, 1]);
+    pts.sort((a, c) => a[0] - c[0]);
+    let prev = pts[0];
+    for (let i = 1; i < pts.length; i++) {
+      const cur = pts[i];
+      if (x <= cur[0]) {
+        const span = cur[0] - prev[0] || 1;
+        return prev[1] + (cur[1] - prev[1]) * ((x - prev[0]) / span);
+      }
+      prev = cur;
+    }
+    return 1;
+  }
+
+  // 手指停下后不再有 MOVE，按估计的采样间隔触发一次归零，让摇杆回中。
+  _scheduleVelocityReset(info) {
+    const vel = info.vel;
+    if (!vel) return;
+    if (vel.timer) clearTimeout(vel.timer);
+    const interval = vel.interval > 0 ? vel.interval : MIN_SAMPLE_INTERVAL_MS;
+    const delay = Math.max(1, interval * VELOCITY_RESET_INTERVALS);
+    vel.timer = setTimeout(() => {
+      vel.timer = 0;
+      // 指针已抬起或不是同一次触摸时不再归零。
+      if (this._pointers.get(info.pointerId) !== info) return;
+      vel.vx = 0;
+      vel.vy = 0;
+      this._applyStickVelocity(info.b, 0, 0);
+    }, delay);
   }
 
   _updateDpad(pointerId, px, py) {
