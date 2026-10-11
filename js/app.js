@@ -14,6 +14,7 @@ import { Haptics } from "./haptics.js";
 import { PAGES } from "./settings-pages.js";
 import { FULL_CON } from "./presets.js";
 import { LayoutEditor } from "./editor.js";
+import { showConfirm, showInput } from "./dialog.js";
 
 const APP_VERSION = "1.0.0";
 
@@ -477,8 +478,8 @@ class App {
     return { version: 1, buttons: [] };
   }
 
-  newPreset() {
-    const nn = prompt("输入新预设名称", "custom_" + (Object.keys(this.presets).length + 1));
+  async newPreset() {
+    const nn = await showInput("新建布局", { hint: "输入新预设名称", prefill: "custom_" + (Object.keys(this.presets).length + 1) });
     if (!nn) return false;
     if (this.presets[nn]) { this._toast("预设已存在"); return false; }
     this.presets[nn] = this.createDefaultPreset();
@@ -487,9 +488,9 @@ class App {
     return true;
   }
 
-  copyCurrentPreset() {
+  async copyCurrentPreset() {
     const src = this.activePreset;
-    const nn = prompt("输入新预设名称", "复制_" + src);
+    const nn = await showInput("复制布局", { hint: "输入新预设名称", prefill: "复制_" + src.replace(/^复制_/, "") });
     if (!nn) return false;
     if (this.presets[nn]) { this._toast("预设已存在"); return false; }
     this.presets[nn] = JSON.parse(JSON.stringify(this.presets[src]));
@@ -498,10 +499,10 @@ class App {
     return true;
   }
 
-  renameCurrentPreset() {
+  async renameCurrentPreset() {
     const src = this.activePreset;
     if (this.isBuiltInPreset(src)) { this._toast("内置布局禁止重命名"); return false; }
-    const nn = prompt("输入新名称", src);
+    const nn = await showInput("重命名", { prefill: src });
     if (!nn || nn === src) return false;
     if (this.presets[nn]) { this._toast("名称已存在"); return false; }
     this.presets[nn] = this.presets[src];
@@ -512,10 +513,10 @@ class App {
     return true;
   }
 
-  deleteCurrentPreset() {
+  async deleteCurrentPreset() {
     const src = this.activePreset;
     if (this.isBuiltInPreset(src)) { this._toast("内置布局禁止删除"); return false; }
-    if (!confirm("确定删除「" + src + "」？")) return false;
+    if (!(await showConfirm("删除预设", "确定删除「" + src + "」？", { positiveText: "删除" }))) return false;
     delete this.presets[src];
     savePresets(this.presets);
     const rest = Object.keys(this.presets);
@@ -523,10 +524,10 @@ class App {
     return true;
   }
 
-  restoreCurrentDefault() {
+  async restoreCurrentDefault() {
     const src = this.activePreset;
     if (!this.isBuiltInPreset(src)) return false;
-    if (!confirm("确定将内置布局「" + src + "」恢复为默认？")) return false;
+    if (!(await showConfirm("恢复默认", "确定将内置布局「" + src + "」恢复为默认？", { positiveText: "恢复默认" }))) return false;
     this.presets[src] = JSON.parse(JSON.stringify(FULL_CON));
     savePresets(this.presets);
     this._loadPreset(src);
@@ -538,19 +539,20 @@ class App {
     this._exportJson(this.activePreset + ".json", this.presets[this.activePreset]);
   }
 
-  importPresetFromFile(file) {
-    return file.text().then((text) => {
+  async importPresetFromFile(file) {
+    try {
+      const text = await file.text();
       const obj = JSON.parse(text);
-      const nn = prompt("保存为预设名称", file.name.replace(/\.json$/, ""));
+      const nn = await showInput("导入布局", { hint: "输入预设名称", prefill: file.name.replace(/\.json$/, "") });
       if (!nn) return false;
       this.presets[nn] = obj;
       savePresets(this.presets);
       this._loadPreset(nn);
       return true;
-    }).catch(() => {
+    } catch {
       this._toast("导入失败：无效 JSON");
       return false;
-    });
+    }
   }
 
   _exportJson(filename, obj) {
@@ -594,7 +596,7 @@ class App {
     document.body.appendChild(overlay);
   }
 
-  _addControl(baseId) {
+  async _addControl(baseId) {
     const [w, h] = defaultSizeFor(baseId);
     let id = baseId;
     let n = 1;
@@ -603,7 +605,7 @@ class App {
     const raw = { id, x: spot.x, y: spot.y, w, h };
     if (baseId === "btnCustomRect" || baseId === "btnCustomCircle") {
       raw.isCustom = true;
-      raw.customText = prompt("自定义按钮文字", "自定义") || "自定义";
+      raw.customText = (await showInput("自定义按钮文字", { hint: "输入按钮文字", prefill: "自定义" })) || "自定义";
       raw.customBits = [];
     }
     if (baseId === "customKeypad") {

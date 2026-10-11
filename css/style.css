@@ -650,6 +650,68 @@ html, body {
   font-family: inherit;
 }
 
+/* ── Alert dialogs (android CustomDialog.showConfirm / showInput) ── */
+.dlgov {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.dlgbox {
+  width: min(88vw, 380px);
+  max-height: 88vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px 24px 16px;
+  background: var(--surface-2);
+  text-align: center;
+}
+.dlgtitle {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+.dlgmsg {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin: 16px 0 20px;
+}
+.dlginput {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 40px;
+  margin: 16px 0 20px;
+  padding: 0 10px;
+  background: var(--line);
+  color: var(--text);
+  border: none;
+  border-radius: 0;
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.dlginput::placeholder { color: var(--text-dim); }
+.dlgbtnrow { display: flex; justify-content: flex-end; gap: 8px; }
+.dlgbtn {
+  height: 40px;
+  padding: 0 16px;
+  background: var(--chip-pressed);
+  color: var(--text-dim);
+  border: none;
+  border-radius: 0;
+  font-size: 14px;
+  font-family: inherit;
+}
+.dlgbtn.primary { background: var(--accent-dim); color: var(--text); }
+.dlgbtn:active { filter: brightness(1.15); }
+
 @media (max-width: 560px) {
   #settingsNav { width: 96px; }
   .navitem { font-size: 12px; }

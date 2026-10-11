@@ -6,6 +6,7 @@
 // sensitivity-curve editor, mouse gestures) are intentionally omitted.
 
 import { el } from "./dom.js";
+import { showConfirm } from "./dialog.js";
 import {
   baseId, getControl, isKeypadId, bitName, OUTPUT_PICKER_GROUPS,
   chineseNameFor, isButtonId, isSettingsId, DOUBLE_CLICK_IDS, JOYSTICK_IDS,
@@ -112,9 +113,9 @@ export class LayoutEditor {
     this.app._toast("已保存布局");
   }
 
-  _onDiscard() {
+  async _onDiscard() {
     const layout = this.app.layout;
-    if (layout.hasUnsavedChanges() && !confirm("放弃当前布局修改？")) return;
+    if (layout.hasUnsavedChanges() && !(await showConfirm("放弃修改", "确定放弃当前布局修改？"))) return;
     if (layout.hasUnsavedChanges()) layout.discardToSnapshot();
     this.close();
     this.app._toast("已放弃修改");
@@ -559,10 +560,10 @@ export class LayoutEditor {
     }
   }
 
-  _delete() {
+  async _delete() {
     const id = this._current && this._current.id;
     if (!id) return;
-    if (!confirm("确定删除该控件？")) return;
+    if (!(await showConfirm("删除控件", "确定删除该控件？", { positiveText: "删除" }))) return;
     const layout = this.app.layout;
     layout.buttons = layout.buttons.filter((b) => b.id !== id);
     layout.selectedId = null;

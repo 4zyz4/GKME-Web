@@ -1,6 +1,7 @@
 // GKME-Web — settings page builders (mirrors the 9 Android settings pages).
 
 import { el, row, section, toggle, slider, select, button, colorInput } from "./dom.js";
+import { showConfirm } from "./dialog.js";
 import { DISPLAY_MODES } from "./controls.js";
 import { DEFAULT_APPEARANCE, normalizeButton } from "./layout.js";
 import { DEFAULT_SETTINGS, savePresets } from "./state.js";
@@ -58,10 +59,10 @@ export const PAGES = {
         chips.appendChild(b);
         return b;
       };
-      chip("新建", () => { if (app.newPreset()) build(); });
+      chip("新建", async () => { if (await app.newPreset()) build(); });
       chip("编辑", () => app.enterEditMode());
-      if (isBuiltIn) chip("恢复默认", () => { if (app.restoreCurrentDefault()) build(); });
-      chip("复制", () => { if (app.copyCurrentPreset()) build(); });
+      if (isBuiltIn) chip("恢复默认", async () => { if (await app.restoreCurrentDefault()) build(); });
+      chip("复制", async () => { if (await app.copyCurrentPreset()) build(); });
       chip("导出", () => app.exportCurrentPreset());
       chips.appendChild(
         el("label", { class: "filebtn presetchip" }, [
@@ -79,8 +80,8 @@ export const PAGES = {
         ])
       );
       if (!isBuiltIn) {
-        chip("重命名", () => { if (app.renameCurrentPreset()) build(); });
-        chip("删除", () => { if (app.deleteCurrentPreset()) build(); });
+        chip("重命名", async () => { if (await app.renameCurrentPreset()) build(); });
+        chip("删除", async () => { if (await app.deleteCurrentPreset()) build(); });
       }
       root.appendChild(chips);
 
@@ -217,16 +218,16 @@ export const PAGES = {
     root.appendChild(
       section("重置", [
         el("div", { class: "btnrow" }, [
-          button("重置全部设置", () => {
-            if (!confirm("恢复默认设置？")) return;
+          button("重置全部设置", async () => {
+            if (!(await showConfirm("重置全部设置", "确定恢复默认设置？", { positiveText: "重置" }))) return;
             app.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
             applyAppearance(app);
             app.layout.setDisplayMode(app.settings.displayMode);
             app._restartSendLoop();
             app._selectCategory("misc");
           }, "danger"),
-          button("重置当前预设", () => {
-            if (!confirm("恢复当前预设为默认？")) return;
+          button("重置当前预设", async () => {
+            if (!(await showConfirm("重置当前预设", "确定恢复当前预设为默认？", { positiveText: "重置" }))) return;
             app.presets[app.activePreset] = { version: 1, buttons: [] };
             save(app);
             app.layout.setPreset(app.presets[app.activePreset]);
