@@ -4,6 +4,7 @@ import { el, row, section, toggle, slider, select, button, colorInput } from "./
 import { DISPLAY_MODES } from "./controls.js";
 import { DEFAULT_APPEARANCE, normalizeButton } from "./layout.js";
 import { DEFAULT_SETTINGS, savePresets } from "./state.js";
+import { connectedGamepads, deviceMotorCount, gamepadActuator } from "./haptics.js";
 
 function ensureAppearance(app) {
   if (!app.settings.appearance) {
@@ -132,22 +133,49 @@ export const PAGES = {
   },
 
   vibration(app, root) {
-    root.appendChild(
-      section("按钮震动", [
-        row("按键按下震动", toggle(app.settings.haptics.buttonVibrate, (v) => (app.settings.haptics.buttonVibrate = v))),
-        row("震动时长", slider(5, 60, 1, app.settings.haptics.buttonVibrateMs, (v) => (app.settings.haptics.buttonVibrateMs = v), (v) => v + " ms")),
-      ])
-    );
-    root.appendChild(
-      section("游戏震动", [
-        row("接收主机震动", toggle(app.settings.haptics.gameVibrate, (v) => (app.settings.haptics.gameVibrate = v))),
-        row("交换左右马达", toggle(app.settings.haptics.swapMotors, (v) => (app.settings.haptics.swapMotors = v))),
-        button("测试震动", () => app.haptics.rumble(255, 255)),
-      ])
-    );
-    root.appendChild(
-      el("p", { class: "hint", text: app.haptics.supported ? "使用浏览器 Vibration API（仅移动端浏览器支持）。" : "当前浏览器不支持 Vibration API。" })
-    );
+    const build = () => {
+      root.innerHTML = "";
+      root.appendChild(section("按钮震动", [buttonVibrationControls(app, build)]));
+
+      const hs = app.settings.haptics;
+      const pads = connectedGamepads();
+      if (!hs.device || typeof hs.device !== "object") hs.device = { type: "phone", controllerIndex: 0 };
+
+      const options = [["phone", "手机马达"]];
+      pads.forEach((p, i) => options.push(["controller:" + i, gamepadLabel(p, i)]));
+      options.push(["none", "无"]);
+
+      let value = hs.device.type === "controller" ? "controller:" + (hs.device.controllerIndex | 0) : hs.device.type;
+      if (!options.some(([v]) => v === value)) value = "phone";
+      const shown = parseVibrationDevice(value, pads);
+
+      const rows = [
+        row("接收主机震动", toggle(hs.gameVibrate, (v) => (hs.gameVibrate = v))),
+        row(
+          "震动设备",
+          select(options, value, (v) => {
+            hs.device = parseVibrationDevice(v, pads);
+            build();
+          })
+        ),
+      ];
+      if (deviceMotorCount(shown, pads) >= 2) {
+        const isController = shown.type === "controller";
+        rows.push(
+          row(
+            "交换左右马达",
+            toggle(isController ? hs.swapControllerMotors : hs.swapPhoneMotors, (v) => {
+              if (isController) hs.swapControllerMotors = v;
+              else hs.swapPhoneMotors = v;
+            })
+          )
+        );
+      }
+
+      root.appendChild(section("游戏震动", rows));
+      root.appendChild(el("p", { class: "hint", text: hapticsHint(app, shown, pads) }));
+    };
+    build();
   },
 
   misc(app, root) {
@@ -227,6 +255,65 @@ export const PAGES = {
 
 function save(app) {
   savePresets(app.presets);
+}
+
+// ── Button vibration (按下 / 松开), mirrors the Android two-column layout ──
+
+function buttonVibrationControls(app, rebuild) {
+  const hs = app.settings.haptics;
+  const column = (isPress, title) => {
+    const typeKey = isPress ? "buttonPressType" : "buttonReleaseType";
+    const durKey = isPress ? "buttonPressDuration" : "buttonReleaseDuration";
+    const chips = el("div", { class: "vibchips" });
+    for (const [val, text] of [["none", "无"], ["custom", "自定义"]]) {
+      const chip = el("button", { class: "btn vibchip" + (hs[typeKey] === val ? " on" : ""), text });
+      chip.addEventListener("click", () => {
+        hs[typeKey] = val;
+        rebuild();
+      });
+      chips.appendChild(chip);
+    }
+    const kids = [el("div", { class: "vibcoltitle", text: title }), chips];
+    if (hs[typeKey] === "custom") {
+      kids.push(
+        row("时长", slider(5, 60, 1, hs[durKey], (v) => (hs[durKey] = v), (v) => v + " ms"))
+      );
+    }
+    return el("div", { class: "vibcol" }, kids);
+  };
+  return el("div", { class: "vibcols" }, [column(true, "按下"), column(false, "松开")]);
+}
+
+// ── Vibration device helpers ──
+
+function gamepadLabel(pad, index) {
+  const id = (pad && pad.id ? pad.id : "").trim();
+  if (!id) return "手柄" + (index + 1);
+  return id.length > 30 ? id.slice(0, 30) + "…" : id;
+}
+
+/** Parse a select value ("phone" | "controller:<i>" | "none") into a device object. */
+function parseVibrationDevice(value, pads) {
+  if (typeof value === "string" && value.startsWith("controller:")) {
+    const index = Number(value.slice("controller:".length));
+    if (pads[index]) return { type: "controller", controllerIndex: index };
+  } else if (value === "none") {
+    return { type: "none", controllerIndex: 0 };
+  }
+  return { type: "phone", controllerIndex: 0 };
+}
+
+function hapticsHint(app, device, pads) {
+  if (device.type === "none") return "已关闭游戏震动输出。";
+  if (device.type === "controller") {
+    const actuator = gamepadActuator(pads[device.controllerIndex | 0]);
+    return actuator
+      ? "游戏震动通过 Gamepad API 的 dual-rumble 发送到所选手柄（强/弱双马达）。"
+      : "所选手柄不支持震动：浏览器未提供 vibrationActuator（部分手柄依赖厂商驱动）。";
+  }
+  return app.haptics.supported
+    ? "手机马达使用浏览器 Vibration API（仅移动端浏览器支持）。"
+    : "当前浏览器不支持 Vibration API。";
 }
 
 // Miniature layout preview for a preset card (mirrors PresetPreviewView).

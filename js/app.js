@@ -69,6 +69,8 @@ class App {
     this.toast = document.getElementById("toast");
 
     this.settingsClose.addEventListener("click", () => this.closeSettings());
+    window.addEventListener("gamepadconnected", () => this._onGamepadsChanged());
+    window.addEventListener("gamepaddisconnected", () => this._onGamepadsChanged());
     window.addEventListener("resize", () => {
       this.layout && this.layout.resize();
       this._positionStatus();
@@ -120,11 +122,12 @@ class App {
         // Send the press before any (possibly blocking) haptic call so the
         // host sees it without waiting for the next timer tick.
         this._sendFrame();
-        this.haptics.buttonPulse();
+        this.haptics.buttonPulse(true);
       },
       onButtonUp: (id, bit) => {
         this.state._touchButtons = (this.state._touchButtons & ~bit) >>> 0;
         this._sendFrame();
+        this.haptics.buttonPulse(false);
       },
       onStick: (axis, x, y) => {
         if (axis === "left") { this.state.leftStickX = x; this.state.leftStickY = y; }
@@ -133,6 +136,11 @@ class App {
       onDpad: (hat) => {
         this.state._touchDpad = hat >>> 0;
         this._sendFrame();
+        const pressed = (hat >>> 0) !== 0;
+        if (pressed !== this._dpadPressed) {
+          this._dpadPressed = pressed;
+          this.haptics.buttonPulse(pressed);
+        }
       },
       onTrigger: (which, value) => {
         if (which === "left") this.state.leftTrigger = value;
@@ -219,7 +227,7 @@ class App {
       this.shiftActive = down;
       this.layout.setKeyboardShift(down);
     }
-    if (down) this.haptics.buttonPulse();
+    this.haptics.buttonPulse(down);
   }
 
   _modifierBitFor(code) {
@@ -430,6 +438,14 @@ class App {
     this.settingsBody.innerHTML = "";
     const builder = PAGES[id];
     if (builder) builder(this, this.settingsBody);
+  }
+
+  /** Rebuild pages whose device list depends on the connected gamepads. */
+  _onGamepadsChanged() {
+    if (this.settingsPanel.classList.contains("hidden")) return;
+    if (this._category === "vibration" || this._category === "physical") {
+      this._selectCategory(this._category);
+    }
   }
 
   _buildSettings() {

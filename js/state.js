@@ -10,10 +10,17 @@ export const DEFAULT_SETTINGS = {
   displayMode: "XBOX",
   pollingHz: 120,
   haptics: {
-    buttonVibrate: true,
-    buttonVibrateMs: 18,
+    // Button vibration, split into press / release. type: "none" | "custom".
+    buttonPressType: "custom",
+    buttonPressDuration: 18,
+    buttonReleaseType: "none",
+    buttonReleaseDuration: 12,
     gameVibrate: true,
-    swapMotors: false,
+    // Which actuator receives the game rumble. type: "phone" | "controller" | "none";
+    // controllerIndex is the position in the connected-gamepad list (see connectedGamepads()).
+    device: { type: "phone", controllerIndex: 0 },
+    swapPhoneMotors: false,
+    swapControllerMotors: false,
   },
   mouse: {
     pointerAcceleration: 1,
@@ -50,7 +57,27 @@ export function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-    return deepMerge(DEFAULT_SETTINGS, JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const merged = deepMerge(DEFAULT_SETTINGS, parsed);
+    // Migrate the legacy single swapMotors flag to the phone-motor setting.
+    const legacySwap = parsed && parsed.haptics && parsed.haptics.swapMotors;
+    if (typeof legacySwap === "boolean" && !(parsed.haptics && "swapPhoneMotors" in parsed.haptics)) {
+      merged.haptics.swapPhoneMotors = legacySwap;
+    }
+    delete merged.haptics.swapMotors;
+    // Migrate the legacy single button-vibration toggle/duration to the press side.
+    const h = parsed && parsed.haptics;
+    if (h) {
+      if (typeof h.buttonVibrate === "boolean" && !("buttonPressType" in h)) {
+        merged.haptics.buttonPressType = h.buttonVibrate ? "custom" : "none";
+      }
+      if (typeof h.buttonVibrateMs === "number" && !("buttonPressDuration" in h)) {
+        merged.haptics.buttonPressDuration = h.buttonVibrateMs;
+      }
+    }
+    delete merged.haptics.buttonVibrate;
+    delete merged.haptics.buttonVibrateMs;
+    return merged;
   } catch {
     return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   }
