@@ -11,6 +11,7 @@ import {
   controlLabel, keyboardCaption, KB_MODIFIER_CODES, MODIFIER_BITS,
 } from "./controls.js";
 import { drawIcon } from "./icons.js";
+import { viewportToLocal } from "./orientation.js";
 
 export const GRID_COLS = 120;
 
@@ -265,9 +266,10 @@ export class GamepadLayout {
 
   // ── geometry ──
   resize() {
-    const rect = this.canvas.getBoundingClientRect();
-    const cssW = Math.max(1, rect.width);
-    const cssH = Math.max(1, rect.height);
+    // offsetWidth/offsetHeight ignore CSS transforms, so they stay correct while
+    // the page is force-rotated to landscape (see js/orientation.js).
+    const cssW = Math.max(1, this.canvas.offsetWidth);
+    const cssH = Math.max(1, this.canvas.offsetHeight);
     this._dpr = Math.max(1, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(cssW * this._dpr);
     this.canvas.height = Math.round(cssH * this._dpr);
@@ -1424,8 +1426,8 @@ export class GamepadLayout {
   }
 
   _pos(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    return { px: e.clientX - rect.left, py: e.clientY - rect.top };
+    const { x, y } = viewportToLocal(e.clientX, e.clientY);
+    return { px: x, py: y };
   }
 
   _onDown(e) {

@@ -321,9 +321,8 @@ function hapticsHint(app, device, pads) {
 // Miniature layout preview for a preset card (mirrors PresetPreviewView).
 function drawPresetPreview(canvas, preset) {
   const raw = (preset && preset.buttons) || [];
-  const rect = canvas.getBoundingClientRect();
-  const cssW = Math.max(1, rect.width);
-  const cssH = Math.max(1, rect.height);
+  const cssW = Math.max(1, canvas.offsetWidth);
+  const cssH = Math.max(1, canvas.offsetHeight);
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);

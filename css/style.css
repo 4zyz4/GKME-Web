@@ -44,6 +44,18 @@ html, body {
   -webkit-user-select: none;
 }
 
+/* ── Forced landscape (iOS Safari & other browsers without a working Screen
+ * Orientation lock): rotate the whole page 90° so the gamepad still renders in
+ * landscape. The body's width/height are set in px from JS (js/orientation.js);
+ * the transform makes it the containing block for the fixed-position UI. ── */
+html.force-landscape body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  transform: rotate(90deg) translateY(-100%);
+}
+
 #gamepad {
   position: fixed;
   inset: 0;
@@ -86,7 +98,7 @@ html, body {
 #connectOverlay.hidden { display: none; }
 
 #connectOverlay .card {
-  width: min(420px, 88vw);
+  width: min(420px, 88%);
   text-align: center;
   padding: 24px 20px 16px;
   background: var(--surface-2);
@@ -269,7 +281,7 @@ html, body {
 }
 
 .statusval { color: var(--text-dim); font-size: 13px; }
-.statusval.small { font-size: 11px; word-break: break-all; max-width: 60vw; }
+.statusval.small { font-size: 11px; word-break: break-all; max-width: 60%; }
 
 .sliderwrap { display: flex; align-items: center; gap: 10px; }
 .sliderwrap input[type="range"] { width: 150px; accent-color: var(--accent); }
@@ -385,7 +397,7 @@ html, body {
 .aboutsponsor { margin-top: 28px; height: 44px; padding: 0 24px; font-size: 14px; }
 
 /* ── Sponsor dialog (android showSponsorDialog) ── */
-.sponsorimg { display: block; width: 100%; max-width: min(70vw, 260px); margin: 0 auto; }
+.sponsorimg { display: block; width: 100%; max-width: min(70%, 260px); margin: 0 auto; }
 
 /* ── Layout editor floating panel (FloatingEditorPanel) ── */
 #editpanel {
@@ -638,7 +650,7 @@ html, body {
   border-radius: 0;
   max-width: 720px;
   width: 100%;
-  max-height: 80vh;
+  max-height: 80%;
   overflow-y: auto;
   padding: 20px 24px 16px;
 }
@@ -680,8 +692,8 @@ html, body {
   padding: 20px;
 }
 .dlgbox {
-  width: min(88vw, 380px);
-  max-height: 88vh;
+  width: min(88%, 380px);
+  max-height: 88%;
   overflow-y: auto;
   box-sizing: border-box;
   padding: 20px 24px 16px;

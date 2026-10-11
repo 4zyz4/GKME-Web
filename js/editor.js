@@ -6,6 +6,7 @@
 // sensitivity-curve editor) are intentionally omitted.
 
 import { el } from "./dom.js";
+import { viewportToLocal, elementLocalRect, localViewport } from "./orientation.js";
 import { showConfirm } from "./dialog.js";
 import {
   baseId, getControl, isKeypadId, bitName, OUTPUT_PICKER_GROUPS,
@@ -141,11 +142,12 @@ export class LayoutEditor {
     let oy = 0;
     this.grip.addEventListener("pointerdown", (e) => {
       dragging = true;
-      const r = this.panel.getBoundingClientRect();
+      const r = elementLocalRect(this.panel);
       ox = r.left;
       oy = r.top;
-      sx = e.clientX;
-      sy = e.clientY;
+      const p = viewportToLocal(e.clientX, e.clientY);
+      sx = p.x;
+      sy = p.y;
       this.panel.style.right = "auto";
       this.panel.style.left = ox + "px";
       this.panel.style.top = oy + "px";
@@ -153,10 +155,12 @@ export class LayoutEditor {
     });
     this.grip.addEventListener("pointermove", (e) => {
       if (!dragging) return;
-      const w = this.panel.offsetWidth;
-      const h = this.panel.offsetHeight;
-      const nx = Math.min(Math.max(0, ox + e.clientX - sx), Math.max(0, window.innerWidth - w));
-      const ny = Math.min(Math.max(0, oy + e.clientY - sy), Math.max(0, window.innerHeight - h));
+      const { w, h } = localViewport();
+      const pw = this.panel.offsetWidth;
+      const ph = this.panel.offsetHeight;
+      const p = viewportToLocal(e.clientX, e.clientY);
+      const nx = Math.min(Math.max(0, ox + (p.x - sx)), Math.max(0, w - pw));
+      const ny = Math.min(Math.max(0, oy + (p.y - sy)), Math.max(0, h - ph));
       this.panel.style.left = nx + "px";
       this.panel.style.top = ny + "px";
     });

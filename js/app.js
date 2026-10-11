@@ -15,6 +15,7 @@ import { PAGES } from "./settings-pages.js";
 import { FULL_CON } from "./presets.js";
 import { LayoutEditor } from "./editor.js";
 import { showConfirm, showInput } from "./dialog.js";
+import { setForceLandscape } from "./orientation.js";
 
 // ── Settings animation constants (mirrors MainActivitySettings.kt) ──
 const SETTINGS_OPEN_DURATION = 300;
@@ -51,6 +52,8 @@ class App {
     this._bindDom();
     this._bindConnection();
     this._buildLayout();
+    this._applyOrientationMode();
+    this.layout.resize();
     this._buildSettings();
     this.editor = new LayoutEditor(this);
     this._startLoops();
@@ -77,11 +80,10 @@ class App {
     this.settingsClose.addEventListener("click", () => this.closeSettings());
     window.addEventListener("gamepadconnected", () => this._onGamepadsChanged());
     window.addEventListener("gamepaddisconnected", () => this._onGamepadsChanged());
-    window.addEventListener("resize", () => {
-      this.layout && this.layout.resize();
-      this._positionStatus();
-    });
-    window.addEventListener("orientationchange", () => setTimeout(() => { this.layout.resize(); this._positionStatus(); }, 300));
+    const onViewportChange = () => this._onViewportChange();
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("orientationchange", () => setTimeout(onViewportChange, 300));
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", onViewportChange);
     document.addEventListener("fullscreenchange", () => setTimeout(() => { this.layout.resize(); this._positionStatus(); }, 300));
 
     this.connectBtn.addEventListener("click", () => {
@@ -97,20 +99,61 @@ class App {
     this._toastTimer = setTimeout(() => this.toast.classList.remove("show"), ms);
   }
 
+  _isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
+  /** Browsers without a usable Screen Orientation API (notably iOS Safari)
+   *  cannot lock the screen; fall back to rotating the page itself. */
+  _shouldForceLandscape() {
+    if (typeof window.matchMedia !== "function") return false;
+    if (!window.matchMedia("(orientation: portrait)").matches) return false;
+    // iOS never implements Screen Orientation lock() reliably, so always fall
+    // back to the CSS rotation there.
+    if (this._isIOS()) return true;
+    const lockable = !!(screen.orientation && typeof screen.orientation.lock === "function");
+    return !lockable && window.matchMedia("(pointer: coarse)").matches;
+  }
+
+  _applyOrientationMode() {
+    const force = this._shouldForceLandscape();
+    if (force !== this._forceLandscape) {
+      this._forceLandscape = force;
+      setForceLandscape(force);
+    }
+    // iOS Safari sizes 100vh/100vw to the largest viewport, so set the rotated
+    // body explicitly from the live visual viewport to keep layout in sync.
+    if (force) {
+      document.body.style.width = window.innerHeight + "px";
+      document.body.style.height = window.innerWidth + "px";
+    } else {
+      document.body.style.width = "";
+      document.body.style.height = "";
+    }
+  }
+
+  _onViewportChange() {
+    this._applyOrientationMode();
+    if (!this.layout) return;
+    this.layout.resize();
+    this._positionStatus();
+  }
+
   _enterFullscreen() {
     const el = document.documentElement;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
     if (!document.fullscreenElement && el.requestFullscreen) {
       el.requestFullscreen().catch(() => {});
-    } else if (isIOS && !navigator.standalone) {
+    } else if (this._isIOS() && !navigator.standalone) {
       this._toast("iOS 请点「分享 → 添加到主屏幕」以全屏运行");
     }
 
     if (screen.orientation && screen.orientation.lock) {
       screen.orientation.lock("landscape").catch(() => {});
     }
+    // Toggling fullscreen can change the usable viewport; re-evaluate rotation.
+    this._onViewportChange();
   }
 
   async _acquireWakeLock() {
@@ -388,8 +431,9 @@ class App {
   /** Center of the reveal (in the panel's viewport space) and the radius
    *  needed to cover it, anchored on the settings button when possible. */
   _settingsRevealGeometry() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Panel-local coordinates equal the gamepad layout's coordinate space.
+    const w = this.layout ? this.layout.cssW : window.innerWidth;
+    const h = this.layout ? this.layout.cssH : window.innerHeight;
     let cx = w / 2;
     let cy = h / 2;
     const button = this.layout && this.layout.buttons.find((b) => b.isSettings && b.visible);
@@ -408,8 +452,8 @@ class App {
    *  CircularRevealLayout.clipOutPath (the panel stays visible everywhere but
    *  the growing hole). */
   _settingsHolePath(cx, cy, r) {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = this.layout ? this.layout.cssW : window.innerWidth;
+    const h = this.layout ? this.layout.cssH : window.innerHeight;
     const rr = Math.max(r, 0.0001);
     const d =
       `M0 0 H${w} V${h} H0 Z ` +
