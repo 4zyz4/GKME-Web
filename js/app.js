@@ -56,7 +56,6 @@ class App {
   // ── DOM ──
   _bindDom() {
     this.topbar = document.getElementById("topbar");
-    this.statusDot = document.getElementById("statusDot");
     this.statusText = document.getElementById("statusText");
     this.connectOverlay = document.getElementById("connectOverlay");
     this.connectMsg = document.getElementById("connectMsg");
@@ -266,19 +265,17 @@ class App {
 
   _updateStatus(state) {
     const map = {
-      connecting: ["#e0a030", "连接中…"],
-      connected: ["#4caf50", "已连接"],
-      disconnected: ["#e0553a", "未连接"],
+      connecting: "连接中…",
+      connected: "已连接",
+      disconnected: "未连接",
     };
-    const [color, text] = map[state] || map.disconnected;
-    this.statusDot.style.background = color;
-    this.statusText.textContent = text;
+    this.statusText.textContent = map[state] || map.disconnected;
     this.connectOverlay.classList.toggle("hidden", state === "connected");
     if (state === "connected" && this.settings.screen.keepAwake) this._acquireWakeLock();
     this._positionStatus();
   }
 
-  /** Keep the connection pill centred on the touchpad, matching where the
+  /** Keep the status label centred on the touchpad, matching where the
    *  device actually is on screen (and out of the settings overlay). */
   _positionStatus() {
     if (!this.layout || !this.topbar) return;
