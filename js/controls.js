@@ -216,6 +216,81 @@ const FACE_LABELS = {
   btnY: { XBOX: "Y", PS: "", SWITCH: "X" },
 };
 
+// Bit value → display name (mirrors MainActivityControls.BitNameMapper).
+export const BIT_NAMES = {
+  [BIT.A]: "手柄：A",
+  [BIT.B]: "手柄：B",
+  [BIT.X]: "手柄：X",
+  [BIT.Y]: "手柄：Y",
+  [BIT.LB]: "手柄：LB",
+  [BIT.RB]: "手柄：RB",
+  [BIT.LT]: "手柄：LT",
+  [BIT.RT]: "手柄：RT",
+  [BIT.SELECT]: "手柄：选择",
+  [BIT.START]: "手柄：菜单",
+  [BIT.L3]: "手柄：左摇杆按下",
+  [BIT.R3]: "手柄：右摇杆按下",
+  [BIT.HOME]: "手柄：主页",
+  [BIT.TOUCHPAD_CLICK]: "手柄：分享",
+  [BIT.MIC_MUTE]: "麦克风静音",
+  [BIT.DPAD_BIT_UP]: "上方向",
+  [BIT.DPAD_BIT_DOWN]: "下方向",
+  [BIT.DPAD_BIT_LEFT]: "左方向",
+  [BIT.DPAD_BIT_RIGHT]: "右方向",
+  [BIT.MOUSE_LMB]: "鼠标：LMB",
+  [BIT.MOUSE_RMB]: "鼠标：RMB",
+  [BIT.MOUSE_MMB]: "鼠标：MMB",
+  [BIT.MOUSE_BACK]: "鼠标：后退",
+  [BIT.MOUSE_FORWARD]: "鼠标：前进",
+};
+
+export function bitName(bit) {
+  return BIT_NAMES[bit] || "位" + bit;
+}
+
+// Output picker groups (mirrors MainActivity.showOutputValuePicker).
+export const OUTPUT_PICKER_GROUPS = [
+  {
+    title: "手柄",
+    bits: [
+      BIT.A, BIT.B, BIT.X, BIT.Y, BIT.LB, BIT.RB, BIT.LT, BIT.RT,
+      BIT.SELECT, BIT.START, BIT.L3, BIT.R3, BIT.HOME, BIT.TOUCHPAD_CLICK,
+      BIT.MIC_MUTE,
+      BIT.DPAD_BIT_UP, BIT.DPAD_BIT_DOWN, BIT.DPAD_BIT_LEFT, BIT.DPAD_BIT_RIGHT,
+    ],
+  },
+  {
+    title: "鼠标",
+    bits: [BIT.MOUSE_LMB, BIT.MOUSE_RMB, BIT.MOUSE_MMB, BIT.MOUSE_BACK, BIT.MOUSE_FORWARD],
+  },
+];
+
+// Control ids treated as "buttons" by the editor panel (see FloatingEditorPanel.BUTTON_IDS).
+const BUTTON_IDS = new Set([
+  "btnDpadUp", "btnDpadDown", "btnDpadLeft", "btnDpadRight",
+  "btnY", "btnA", "btnX", "btnB", "btnLT", "btnLB", "btnRT", "btnRB",
+  "btnSelect", "btnHome", "btnMenu", "btnShare", "btnLS", "btnRS", "btnMic",
+  "btnMouseLMB", "btnMouseRMB", "btnMouseMMB", "btnMouseBack", "btnMouseForward",
+]);
+
+export function isButtonId(id) {
+  const b = baseId(id);
+  return BUTTON_IDS.has(b) || b.startsWith("btnCustom");
+}
+
+export function isSettingsId(id) {
+  return baseId(id) === "btnSettings";
+}
+
+// Chinese name for the editor panel title (mirrors FloatingEditorPanel.getChineseName).
+export function chineseNameFor(id) {
+  const b = baseId(id);
+  const c = CONTROLS[b];
+  if (c) return c.name;
+  if (isKeypadId(id)) return CONTROLS.customKeypad.name;
+  return b;
+}
+
 export function controlLabel(id, displayMode) {
   const b = baseId(id);
   if (FACE_LABELS[b]) return FACE_LABELS[b][displayMode] ?? FACE_LABELS[b].XBOX;

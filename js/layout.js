@@ -39,11 +39,21 @@ const DEFAULTS = {
   idleOpacity: 100,
   activeOpacity: 100,
   followAreaEnabled: false,
+  followAreaX: 0,
+  followAreaY: 0,
+  followAreaW: 0,
+  followAreaH: 0,
+  followAreaOpacity: 100,
+  followAreaOverlapTrigger: false,
   overlapTrigger: true,
   linearTriggerEnabled: false,
   slideDirection: "DOWN",
   travelDistance: 10,
   autoHold: false,
+  gyroActivate: false,
+  sensitivityCurve: null,
+  keypadTexts: null,
+  keypadBits: null,
   mouseSensitivity: 1,
   scrollSensitivity: 0.1,
   mouseMoveSlop: 4,
@@ -289,20 +299,116 @@ export class GamepadLayout {
   }
 
   serialize() {
+    // Mirrors LayoutPreset.toJson(): every non-default field is written so a
+    // save/discard round-trip preserves the full editing state.
+    const DOUBLE = new Set(["leftJoystick", "rightJoystick", "touchpad"]);
+    const JOY = new Set(["leftJoystick", "rightJoystick"]);
+    const AREA = new Set(["leftJoystick", "rightJoystick", "touchpad", "dpadPad", "customKeypad"]);
     return {
       version: this.preset.version || 1,
       buttons: this.buttons.map((b) => {
+        const base = baseId(b.id);
         const o = { id: b.id, x: b.x, y: b.y, width: b.w, height: b.h, rotation: b.rotation || 0 };
         if (!b.visible) o.visible = false;
-        if (b.isCustom) { o.isCustom = true; o.customText = b.customText; o.customBits = b.customBits || []; }
+        if (b.swipeTrigger) o.swipeTrigger = true;
+        if (b.isCustom) {
+          o.isCustom = true;
+          o.customText = b.customText || "自定义";
+          o.customBits = b.customBits || [];
+        }
         if (b.roundShape) o.roundShape = true;
-        if (b.autoHold) o.autoHold = true;
+        if (b.idleOpacity !== 100) o.idleOpacity = b.idleOpacity;
+        if (b.activeOpacity !== 100) o.activeOpacity = b.activeOpacity;
+        if (b.followAreaOpacity !== 100) o.followAreaOpacity = b.followAreaOpacity;
         if (b.overlapTrigger === false) o.overlapTrigger = false;
-        if (b.linearTriggerEnabled) { o.linearTriggerEnabled = true; o.slideDirection = b.slideDirection; o.travelDistance = b.travelDistance; }
-        if (b.isKeypad) { o.keypadTexts = b.keypadTexts; o.keypadBits = b.keypadBits; o.keypadEightWay = b.keypadEightWay; }
+        if (b.followAreaOverlapTrigger) o.followAreaOverlapTrigger = true;
+        if (DOUBLE.has(base) && b.doubleClickEnable === false) o.doubleClickEnable = false;
+        if (JOY.has(base)) {
+          if (b.joystickSensitivity !== 100) o.joystickSensitivity = b.joystickSensitivity;
+          if (b.touchpadMode) o.touchpadMode = true;
+          if (b.deadZone) o.deadZone = b.deadZone;
+          if (b.reverseDeadZone) o.reverseDeadZone = b.reverseDeadZone;
+          if (b.sensitivityCurve && b.sensitivityCurve.length) o.sensitivityCurve = b.sensitivityCurve;
+        }
+        if (b.prediction) o.prediction = true;
+        if (AREA.has(base) && b.followAreaEnabled) {
+          o.followAreaEnabled = true;
+          o.followAreaX = b.followAreaX | 0;
+          o.followAreaY = b.followAreaY | 0;
+          o.followAreaW = b.followAreaW | 0;
+          o.followAreaH = b.followAreaH | 0;
+        }
+        if (base === "mousepad") {
+          if (b.mouseSensitivity !== 1) o.mouseSensitivity = b.mouseSensitivity;
+          if (b.scrollSensitivity !== 0.1) o.scrollSensitivity = b.scrollSensitivity;
+          if (b.mouseMoveSlop !== 4) o.mouseMoveSlop = b.mouseMoveSlop;
+          if (b.invertScrollV) o.invertScrollV = true;
+          if (b.invertScrollH) o.invertScrollH = true;
+          if (b.doubleClickEnable === false) o.doubleClickEnable = false;
+        }
+        if (b.linearTriggerEnabled) {
+          o.linearTriggerEnabled = true;
+          if (b.slideDirection !== "DOWN") o.slideDirection = b.slideDirection;
+          if (b.travelDistance !== 10) o.travelDistance = b.travelDistance;
+        }
+        if (b.isKeypad) {
+          o.keypadTexts = b.keypadTexts;
+          o.keypadBits = b.keypadBits;
+          if (b.keypadEightWay) o.keypadEightWay = true;
+        }
+        if (b.centerShape && b.centerShape !== "SQUARE") o.centerShape = b.centerShape;
+        if (b.gyroActivate) o.gyroActivate = true;
+        if (b.autoHold) o.autoHold = true;
         return o;
       }),
     };
+  }
+
+  // ── edit-mode lifecycle ──
+  enterEditMode() {
+    this._snapshot = this.serialize();
+    this.editMode = true;
+    this.showGrid = true;
+    this.selectedId = null;
+    this._adjustingFollowArea = false;
+    this.render();
+  }
+
+  exitEditMode() {
+    this.editMode = false;
+    this.showGrid = false;
+    this.selectedId = null;
+    this._edit = null;
+    this._adjustingFollowArea = false;
+    this.render();
+  }
+
+  discardToSnapshot() {
+    if (this._snapshot) this.setPreset(this._snapshot);
+  }
+
+  hasUnsavedChanges() {
+    if (!this._snapshot) return false;
+    return JSON.stringify(this.serialize()) !== JSON.stringify(this._snapshot);
+  }
+
+  enterFollowAreaAdjust(id) {
+    this._adjustingFollowArea = true;
+    this.selectedId = id;
+    this.render();
+  }
+
+  exitFollowAreaAdjust() {
+    this._adjustingFollowArea = false;
+    this.render();
+  }
+
+  // Partial update of an existing button, preserving canvas-only fields (w/h).
+  updateButton(id, props) {
+    const b = this.getButton(id);
+    if (!b) return;
+    Object.assign(b, props);
+    this.render();
   }
 
   // ── rendering ──
@@ -432,6 +538,7 @@ export class GamepadLayout {
 
   _active(b) {
     if (this.controlActive.get(b.id)) return true;
+    if (b._doubleClick) return true;
     const c = getControl(b.id);
     if (c && c.bit) return (this.pressedBits & c.bit) !== 0;
     return false;
@@ -715,6 +822,18 @@ export class GamepadLayout {
     const oy = -side / 2;
     const hat = b._hat || 0;
 
+    // Follow-area mode shifts the whole graphic with the finger (clipped to the
+    // control box), mirroring DpadPadView.onDraw's translate(effectiveCenter).
+    const fdx = b._followDx || 0;
+    const fdy = b._followDy || 0;
+    if (fdx || fdy) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-r.w / 2, -r.h / 2, r.w, r.h);
+      ctx.clip();
+      ctx.translate(fdx, fdy);
+    }
+
     // Circle fill
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
@@ -766,6 +885,8 @@ export class GamepadLayout {
       ctx.stroke();
       ctx.restore();
     }
+
+    if (fdx || fdy) ctx.restore();
   }
 
   _dpadCellRect(bits, ox, oy, a) {
@@ -794,6 +915,18 @@ export class GamepadLayout {
     const half = side * 0.20;
     const d = radius * 0.70710678;
     const region = b._region;
+
+    // Follow-area mode shifts the whole graphic with the finger (clipped to the
+    // control box), mirroring CustomKeypadView.onDraw's translate(effectiveCenter).
+    const fdx = b._followDx || 0;
+    const fdy = b._followDy || 0;
+    if (fdx || fdy) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-r.w / 2, -r.h / 2, r.w, r.h);
+      ctx.clip();
+      ctx.translate(fdx, fdy);
+    }
 
     // Ring fill (circle minus centre square).
     ctx.beginPath();
@@ -836,6 +969,8 @@ export class GamepadLayout {
     this._keypadText(texts[2], -off, 0, box, cap, app.dpadPadIconColor);
     this._keypadText(texts[3], off, 0, box, cap, app.dpadPadIconColor);
     this._keypadText(texts[4], 0, 0, half * 2, cap, app.dpadPadIconColor);
+
+    if (fdx || fdy) ctx.restore();
   }
 
   _keypadWedge(ctx, region, c, d, radius) {
@@ -919,25 +1054,49 @@ export class GamepadLayout {
     }
   }
 
+  _followAreaRectPx(b) {
+    const { cell } = this._layout;
+    return {
+      x: b.followAreaX * cell,
+      y: b.followAreaY * cell,
+      w: b.followAreaW * cell,
+      h: b.followAreaH * cell,
+    };
+  }
+
   // ── selection overlay (GamepadRenderer.drawSelectionOverlay) ──
   _drawSelection(b) {
     if (!b) return;
     const ctx = this.ctx;
-    const { cell } = this._layout;
-    const r = this.gridRect(b);
     ctx.save();
     ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
 
-    if (!this._adjustingFollowArea) {
+    // Follow-area adjust: draw the extended-range rectangle + its handle instead.
+    if (this._adjustingFollowArea) {
+      const fr = this._followAreaRectPx(b);
+      const op = (b.followAreaOpacity == null ? 100 : b.followAreaOpacity) / 100;
+      ctx.save();
+      ctx.globalAlpha *= op;
       ctx.strokeStyle = "rgba(0,255,0,0.804)";
       ctx.lineWidth = 3;
-      ctx.strokeRect(r.x, r.y, r.w, r.h);
-      const h = HANDLE_SIZE_DP;
+      ctx.strokeRect(fr.x, fr.y, fr.w, fr.h);
+      ctx.restore();
+      const fh = HANDLE_SIZE_DP;
       ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(r.x + r.w - h, r.y + r.h - h, h, h);
+      ctx.fillRect(fr.x + fr.w - fh, fr.y + fr.h - fh, fh, fh);
+      ctx.restore();
+      return;
     }
 
-    if (baseId(b.id) !== "btnSettings" && !this._adjustingFollowArea) {
+    const r = this.gridRect(b);
+    ctx.strokeStyle = "rgba(0,255,0,0.804)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    const h = HANDLE_SIZE_DP;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(r.x + r.w - h, r.y + r.h - h, h, h);
+
+    if (baseId(b.id) !== "btnSettings") {
       const dist = MARKER_DIST_DP;
       let mx, my, angle;
       const rot = ((b.rotation || 0) % 360 + 360) % 360;
@@ -959,8 +1118,40 @@ export class GamepadLayout {
   }
 
   // ── hit testing ──
-  _hitTest(px, py) {
-    const { cell, originX, originY } = this._layout;
+  _pointInControl(b, px, py) {
+    const r = this.gridRect(b);
+    return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
+
+  // Extended-range rectangle used by the touchpad when 扩展触摸范围 is on:
+  // the touchpad accepts touches across the whole area (not just its own box).
+  _hitRectFor(b, includeExtension = true) {
+    if (includeExtension && b.isTouchpad && b.followAreaEnabled && b.followAreaW > 0 && b.followAreaH > 0) {
+      return this._followAreaRectPx(b);
+    }
+    return this.gridRect(b);
+  }
+
+  // Follow-area trigger: a joystick / integrated D-pad / custom keypad whose
+  // extended rectangle contains the point follows the finger (its centre jumps
+  // to the touch). Blocked when another control occupies the point, unless
+  // 触发矩形区域重叠触发 is enabled.
+  _hitFollowArea(px, py) {
+    for (const b of this.buttons) {
+      if (!b.visible || !(b.isJoystick || b.isDpadPad || b.isKeypad) || !b.followAreaEnabled) continue;
+      if (!(b.followAreaW > 0 && b.followAreaH > 0)) continue;
+      const r = this._followAreaRectPx(b);
+      if (!(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)) continue;
+      const other = this.buttons.find(
+        (o) => o !== b && o.visible && !o.isSettings && this._pointInControl(o, px, py)
+      );
+      if (other && !b.followAreaOverlapTrigger) return null;
+      return b;
+    }
+    return null;
+  }
+
+  _hitTest(px, py, includeExtension = true) {
     // settings button always wins
     const settings = this.buttons.find((b) => b.isSettings && b.visible);
     if (settings) {
@@ -970,7 +1161,7 @@ export class GamepadLayout {
     let found = null;
     for (const b of this.buttons) {
       if (!b.visible) continue;
-      const r = this.gridRect(b);
+      const r = this._hitRectFor(b, includeExtension);
       if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
         found = b; // last drawn = topmost
       }
@@ -1013,6 +1204,23 @@ export class GamepadLayout {
       this._editDown(e, px, py);
       return;
     }
+
+    // Follow-area trigger (joystick / dpadPad 矩形区域内跟随) takes priority.
+    const followB = this._hitFollowArea(px, py);
+    if (followB) {
+      try { this.canvas.setPointerCapture(e.pointerId); } catch {}
+      if (followB.isJoystick) {
+        this._beginStick(e, followB, px, py, true);
+      } else if (followB.isDpadPad) {
+        this._pointers.set(e.pointerId, { id: followB.id, kind: "dpad", b: followB, follow: true, cx: px, cy: py });
+        this._updateDpad(e.pointerId, px, py);
+      } else {
+        this._pointers.set(e.pointerId, { id: followB.id, kind: "keypad", b: followB, follow: true, cx: px, cy: py });
+        this._updateKeypad(e.pointerId, px, py);
+      }
+      return;
+    }
+
     const b = this._hitTest(px, py);
     if (!b) return;
     try { this.canvas.setPointerCapture(e.pointerId); } catch {}
@@ -1026,8 +1234,7 @@ export class GamepadLayout {
     const alreadyActive = this.controlActive.get(b.id);
 
     if (b.isJoystick) {
-      this._pointers.set(e.pointerId, { id: b.id, kind: "stick", axis: b.axis, b, gx: null, gy: null });
-      this._updateStick(e.pointerId, px, py);
+      this._beginStick(e, b, px, py, false);
       return;
     }
     if (b.isDpadPad) {
@@ -1036,6 +1243,13 @@ export class GamepadLayout {
       return;
     }
     if (b.isTouchpad) {
+      // 双击按下: a second tap within 300ms / 32px emits TOUCHPAD_CLICK while held.
+      const otherTouchpadPointers = [...this._pointers.values()].filter(
+        (p) => p.kind === "touchpad" && p.b === b
+      ).length;
+      this._maybeDoubleTap(b, px, py, otherTouchpadPointers === 0, 32, () =>
+        this._emitBit(b, BIT.TOUCHPAD_CLICK, true)
+      );
       this._pointers.set(e.pointerId, { id: b.id, kind: "touchpad", b, px, py });
       this._updateTouchpad(b);
       return;
@@ -1074,7 +1288,13 @@ export class GamepadLayout {
     const info = this._pointers.get(e.pointerId);
     if (!info) return;
     const { px, py } = this._pos(e);
-    if (info.kind === "stick") this._updateStick(e.pointerId, px, py);
+    if (info.kind === "stick") {
+      // Cancel a pending double-tap if the finger moved too far.
+      if (info.b._tapTime && Math.hypot(px - info.b._tapX, py - info.b._tapY) > 30) {
+        info.b._tapTime = 0;
+      }
+      this._updateStick(e.pointerId, px, py);
+    }
     else if (info.kind === "dpad") this._updateDpad(e.pointerId, px, py);
     else if (info.kind === "keypad") this._updateKeypad(e.pointerId, px, py);
     else if (info.kind === "trigger") this._updateTrigger(e.pointerId, px, py);
@@ -1094,8 +1314,14 @@ export class GamepadLayout {
     if (info.kind === "stick") {
       this._setStick(info.axis, 0, 0);
       this.controlActive.set(info.id, false);
+      if (info.b._doubleClick) {
+        this._emitBit(info.b, info.b.axis === "left" ? BIT.L3 : BIT.R3, false);
+        info.b._doubleClick = false;
+      }
     } else if (info.kind === "dpad") {
       info.b._hat = 0;
+      info.b._followDx = 0;
+      info.b._followDy = 0;
       this.cb.onDpad && this.cb.onDpad(0);
       this.controlActive.set(info.id, false);
     } else if (info.kind === "keypad") {
@@ -1104,6 +1330,8 @@ export class GamepadLayout {
         this.cb.onCustomBits && this.cb.onCustomBits(bits, false);
       }
       info.b._region = null;
+      info.b._followDx = 0;
+      info.b._followDy = 0;
       this.controlActive.set(info.id, false);
     } else if (info.kind === "trigger") {
       this.cb.onTrigger && this.cb.onTrigger(info.b._which, 0);
@@ -1112,6 +1340,13 @@ export class GamepadLayout {
       this._finishMousepad(info);
     } else if (info.kind === "touchpad") {
       this._updateTouchpad(info.b);
+      const remaining = [...this._pointers.values()].filter(
+        (p) => p.kind === "touchpad" && p.b === info.b
+      ).length;
+      if (info.b._doubleClick && remaining === 0) {
+        this._emitBit(info.b, BIT.TOUCHPAD_CLICK, false);
+        info.b._doubleClick = false;
+      }
     } else if (info.kind === "button") {
       this._releaseControl(info.b);
     }
@@ -1158,12 +1393,58 @@ export class GamepadLayout {
     this.cb.onStick && this.cb.onStick(axis, x, y);
   }
 
+  // Emit an arbitrary HID bit for a control that has no static bit mapping
+  // (joystick L3/R3 click, touchpad click).
+  _emitBit(b, bit, down) {
+    if (down) {
+      this.controlActive.set(b.id, true);
+      this.cb.onButtonDown && this.cb.onButtonDown(b.id, bit);
+    } else {
+      this.controlActive.set(b.id, false);
+      this.cb.onButtonUp && this.cb.onButtonUp(b.id, bit);
+    }
+    this.render();
+  }
+
+  // Double-tap detection (mirrors JoystickView / touchpad doubleClickEnable).
+  _maybeDoubleTap(b, px, py, allowed, dist, onDouble) {
+    if (!b.doubleClickEnable) return;
+    const now = performance.now();
+    if (b._tapTime && now - b._tapTime < 300) {
+      if (allowed && Math.hypot(px - b._tapX, py - b._tapY) < dist) {
+        b._tapTime = 0;
+        b._doubleClick = true;
+        onDouble();
+        return;
+      }
+      b._tapTime = now;
+      b._tapX = px;
+      b._tapY = py;
+    } else {
+      b._tapTime = now;
+      b._tapX = px;
+      b._tapY = py;
+    }
+  }
+
+  _beginStick(e, b, px, py, follow) {
+    this._maybeDoubleTap(b, px, py, true, Infinity, () => {
+      this._emitBit(b, b.axis === "left" ? BIT.L3 : BIT.R3, true);
+    });
+    this._pointers.set(e.pointerId, {
+      id: b.id, kind: "stick", axis: b.axis, b,
+      follow: !!follow, cx: px, cy: py,
+    });
+    this._updateStick(e.pointerId, px, py);
+  }
+
   _updateStick(pointerId, px, py) {
     const info = this._pointers.get(pointerId);
     if (!info) return;
     const r = this.gridRect(info.b);
-    const cx = r.x + r.w / 2;
-    const cy = r.y + r.h / 2;
+    // Follow-area mode re-centres the stick at the touch point.
+    const cx = info.follow ? info.cx : r.x + r.w / 2;
+    const cy = info.follow ? info.cy : r.y + r.h / 2;
     const rad = Math.min(r.w, r.h) / 2;
     let dx = (px - cx) / rad;
     let dy = (py - cy) / rad;
@@ -1199,8 +1480,12 @@ export class GamepadLayout {
     const info = this._pointers.get(pointerId);
     if (!info) return;
     const r = this.gridRect(info.b);
-    const nx = (px - (r.x + r.w / 2)) / (r.w / 2);
-    const ny = (py - (r.y + r.h / 2)) / (r.h / 2);
+    const ccx = r.x + r.w / 2;
+    const ccy = r.y + r.h / 2;
+    const cx = info.follow ? info.cx : ccx;
+    const cy = info.follow ? info.cy : ccy;
+    const nx = (px - cx) / (r.w / 2);
+    const ny = (py - cy) / (r.h / 2);
     let hat = 0;
     const t = 0.32;
     if (Math.hypot(nx, ny) > t) {
@@ -1210,6 +1495,8 @@ export class GamepadLayout {
       if (ny < -t) hat |= DPAD.UP;
     }
     info.b._hat = hat;
+    info.b._followDx = info.follow ? info.cx - ccx : 0;
+    info.b._followDy = info.follow ? info.cy - ccy : 0;
     this.controlActive.set(info.id, hat !== 0);
     this.cb.onDpad && this.cb.onDpad(hat);
     this.render();
@@ -1220,8 +1507,14 @@ export class GamepadLayout {
     if (!info) return;
     const b = info.b;
     const r = this.gridRect(b);
-    const nx = (px - (r.x + r.w / 2)) / (r.w / 2);
-    const ny = (py - (r.y + r.h / 2)) / (r.h / 2);
+    const ccx = r.x + r.w / 2;
+    const ccy = r.y + r.h / 2;
+    const cx = info.follow ? info.cx : ccx;
+    const cy = info.follow ? info.cy : ccy;
+    const nx = (px - cx) / (r.w / 2);
+    const ny = (py - cy) / (r.h / 2);
+    b._followDx = info.follow ? info.cx - ccx : 0;
+    b._followDy = info.follow ? info.cy - ccy : 0;
     // region: 4 = center; 0 up,1 down,2 left,3 right; diagonals 5..8
     let region = 4;
     const t = 0.35;
@@ -1276,7 +1569,12 @@ export class GamepadLayout {
   }
 
   _updateTouchpad(b) {
-    const r = this.gridRect(b);
+    // 扩展触摸范围: with followAreaEnabled the coordinates are normalised over
+    // the extended rectangle instead of the touchpad control itself.
+    const r =
+      b.followAreaEnabled && b.followAreaW > 0 && b.followAreaH > 0
+        ? this._followAreaRectPx(b)
+        : this.gridRect(b);
     const points = [];
     let idx = 0;
     for (const [, info] of this._pointers) {
@@ -1285,14 +1583,21 @@ export class GamepadLayout {
       points.push({ id: idx, x: info.px, y: info.py, active: true });
       idx++;
     }
-    // eslint-disable-next-line no-self-assign
+    const clampX = (v) => Math.max(0, Math.min(1919, Math.round(v)));
+    const clampY = (v) => Math.max(0, Math.min(942, Math.round(v)));
     const touches = points.map((p) => ({
       id: p.id,
-      x: Math.round(((p.x - r.x) / r.w) * 1919),
-      y: Math.round(((p.y - r.y) / r.h) * 942),
+      x: clampX(((p.x - r.x) / r.w) * 1919),
+      y: clampY(((p.y - r.y) / r.h) * 942),
       active: true,
     }));
-    b._touchPoints = points.map((p) => ({ nx: (p.x - r.x) / r.w, ny: (p.y - r.y) / r.h }));
+    // Draw markers relative to the control's own box, even when the mapping
+    // region is the larger extended rectangle.
+    const ctrl = this.gridRect(b);
+    b._touchPoints = points.map((p) => ({
+      nx: (p.x - ctrl.x) / ctrl.w,
+      ny: (p.y - ctrl.y) / ctrl.h,
+    }));
     this.cb.onTouchpad && this.cb.onTouchpad(touches);
     this.render();
   }
@@ -1319,12 +1624,29 @@ export class GamepadLayout {
   // ── edit mode ──
   _editDown(e, px, py) {
     try { this.canvas.setPointerCapture(e.pointerId); } catch {}
+    // Follow-area adjust session: drag/resize the extended-range rectangle.
+    if (this._adjustingFollowArea && this.selectedId) {
+      const b = this.getButton(this.selectedId);
+      if (b && b.followAreaEnabled) {
+        const fr = this._followAreaRectPx(b);
+        const hs = HANDLE_SIZE_DP * 2;
+        if (px >= fr.x + fr.w - hs && px <= fr.x + fr.w && py >= fr.y + fr.h - hs && py <= fr.y + fr.h) {
+          this._edit = { pointerId: e.pointerId, mode: "farearesize", b, start: { x: b.followAreaX, y: b.followAreaY, w: b.followAreaW, h: b.followAreaH }, gx: px, gy: py };
+          return;
+        }
+        if (px >= fr.x && px <= fr.x + fr.w && py >= fr.y && py <= fr.y + fr.h) {
+          this._edit = { pointerId: e.pointerId, mode: "fareamove", b, start: { x: b.followAreaX, y: b.followAreaY, w: b.followAreaW, h: b.followAreaH }, gx: px, gy: py };
+          return;
+        }
+        return;
+      }
+    }
     if (this.selectedId && this._hitHandle(px, py)) {
       const b = this.getButton(this.selectedId);
       this._edit = { pointerId: e.pointerId, mode: "resize", b, start: { ...b }, gx: px, gy: py };
       return;
     }
-    const hit = this._hitTest(px, py);
+    const hit = this._hitTest(px, py, false);
     if (hit) {
       this.selectedId = hit.id;
       this._edit = { pointerId: e.pointerId, mode: "move", b: hit, start: { x: hit.x, y: hit.y }, gx: px, gy: py };
@@ -1350,6 +1672,12 @@ export class GamepadLayout {
       let ny = this._edit.start.y + dgy;
       b.x = Math.max(0, Math.min(GRID_COLS - b.w, nx));
       b.y = Math.max(0, ny);
+    } else if (this._edit.mode === "fareamove") {
+      b.followAreaX = Math.max(0, this._edit.start.x + dgx);
+      b.followAreaY = Math.max(0, this._edit.start.y + dgy);
+    } else if (this._edit.mode === "farearesize") {
+      b.followAreaW = Math.max(3, this._edit.start.w + dgx);
+      b.followAreaH = Math.max(3, this._edit.start.h + dgy);
     } else {
       let nw = this._edit.start.w + dgx;
       let nh = this._edit.start.h + dgy;
@@ -1362,6 +1690,9 @@ export class GamepadLayout {
   }
 
   _editUp(e) {
-    if (this._edit && this._edit.pointerId === e.pointerId) this._edit = null;
+    if (this._edit && this._edit.pointerId === e.pointerId) {
+      this._edit = null;
+      this.cb.onEditEnd && this.cb.onEditEnd();
+    }
   }
 }

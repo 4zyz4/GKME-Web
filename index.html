@@ -55,8 +55,20 @@
     </main>
   </div>
 
-  <!-- Layout editor toolbar -->
-  <div id="editbar"></div>
+  <!-- Layout editor floating panel (FloatingEditorPanel) -->
+  <div id="editpanel" class="hidden">
+    <div id="editHeader">
+      <div id="editGrip" aria-label="拖动面板">
+        <span></span><span></span><span></span>
+      </div>
+      <button id="editCollapse" type="button" aria-label="收起/展开面板"></button>
+    </div>
+    <div id="editScroll">
+      <div id="editActions"></div>
+      <div id="editSep"></div>
+      <div id="editParams"></div>
+    </div>
+  </div>
 
   <div id="toast"></div>
 

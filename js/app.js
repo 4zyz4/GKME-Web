@@ -12,6 +12,8 @@ import {
 } from "./state.js";
 import { Haptics } from "./haptics.js";
 import { PAGES } from "./settings-pages.js";
+import { FULL_CON } from "./presets.js";
+import { LayoutEditor } from "./editor.js";
 
 const APP_VERSION = "1.0.0";
 
@@ -43,7 +45,7 @@ class App {
     this._bindConnection();
     this._buildLayout();
     this._buildSettings();
-    this._buildEditBar();
+    this.editor = new LayoutEditor(this);
     this._startLoops();
     // First connection is manual: wait for the user to tap 连接.
     this._updateStatus("disconnected");
@@ -64,7 +66,6 @@ class App {
     this.settingsNav = document.getElementById("settingsNav");
     this.settingsNavList = document.getElementById("settingsNavList");
     this.settingsClose = document.getElementById("settingsClose");
-    this.editBar = document.getElementById("editbar");
     this.toast = document.getElementById("toast");
 
     this.settingsClose.addEventListener("click", () => this.closeSettings());
@@ -153,8 +154,9 @@ class App {
       },
       onCustomBits: (bits, down) => this._applyCustomBits(bits, down),
       onKey: (code, down) => this._onKey(code, down),
-      onEditChanged: () => this._syncEditBar(),
-      onSelect: (id) => this._syncEditBar(),
+      onEditChanged: () => this.editor && this.editor.onEditChanged(),
+      onEditEnd: () => this.editor && this.editor.onEditEnd(),
+      onSelect: (id) => this.editor && this.editor.onSelect(id),
     });
     this.layout.setDisplayMode(this.settings.displayMode);
     this.layout.keyboardShift = false;
@@ -413,7 +415,7 @@ class App {
   _renderSettingsNav() {
     const cats = [
       ["connection", "连接"],
-      ["presets", "布局预设"],
+      ["presets", "布局"],
       ["physical", "实体手柄"],
       ["vibration", "震动"],
       ["misc", "杂项"],
@@ -445,55 +447,109 @@ class App {
     this._renderSettingsNav();
   }
 
-  // ── Edit bar ──
-  _buildEditBar() {
-    this.editBar.innerHTML = "";
-    const mk = (label, fn) => {
-      const b = document.createElement("button");
-      b.textContent = label;
-      b.addEventListener("click", fn);
-      this.editBar.appendChild(b);
-      return b;
-    };
-    mk("完成", () => this._toggleEdit(false));
-    this.editSelInfo = document.createElement("span");
-    this.editSelInfo.className = "editinfo";
-    this.editBar.appendChild(this.editSelInfo);
-    mk("添加控件", () => this._showAddControl());
-    this.editHideBtn = mk("隐藏/显示", () => {
-      const b = this.layout.getButton(this.layout.selectedId);
-      if (b) { b.visible = !b.visible; this.layout.render(); }
-    });
-    this.editDelBtn = mk("删除", () => {
-      const id = this.layout.selectedId;
-      if (!id) return;
-      this.layout.buttons = this.layout.buttons.filter((b) => b.id !== id);
-      this.layout.selectedId = null;
-      this.layout.render();
-      this._syncEditBar();
-    });
-    mk("保存", () => this._saveCurrentPreset());
-    mk("网格", () => { this.layout.showGrid = !this.layout.showGrid; this.layout.render(); });
-    this._syncEditBar();
+  // ── Layout editing ──
+  enterEditMode() {
+    if (this.editor.isOpen) return;
+    this.closeSettings();
+    this.editor.open();
   }
 
-  _toggleEdit(on) {
-    const target = on === undefined ? !this.layout.editMode : on;
-    this.layout.editMode = target;
-    this.editBar.classList.toggle("show", target);
-    this.layout.showGrid = target;
-    if (!target) {
-      this.layout.selectedId = null;
-      this._saveCurrentPreset();
-    }
-    this.layout.render();
+  // ── Preset management (used by the 布局预设 settings page) ──
+  isBuiltInPreset(name) {
+    return name === "full_con";
   }
 
-  _syncEditBar() {
-    const id = this.layout.selectedId;
-    this.editSelInfo.textContent = id ? "选中: " + id : "未选中";
-    this.editHideBtn.disabled = !id;
-    this.editDelBtn.disabled = !id;
+  presetNames() {
+    return Object.keys(this.presets);
+  }
+
+  createDefaultPreset() {
+    return { version: 1, buttons: [] };
+  }
+
+  newPreset() {
+    const nn = prompt("输入新预设名称", "custom_" + (Object.keys(this.presets).length + 1));
+    if (!nn) return false;
+    if (this.presets[nn]) { this._toast("预设已存在"); return false; }
+    this.presets[nn] = this.createDefaultPreset();
+    savePresets(this.presets);
+    this._loadPreset(nn);
+    return true;
+  }
+
+  copyCurrentPreset() {
+    const src = this.activePreset;
+    const nn = prompt("输入新预设名称", "复制_" + src);
+    if (!nn) return false;
+    if (this.presets[nn]) { this._toast("预设已存在"); return false; }
+    this.presets[nn] = JSON.parse(JSON.stringify(this.presets[src]));
+    savePresets(this.presets);
+    this._loadPreset(nn);
+    return true;
+  }
+
+  renameCurrentPreset() {
+    const src = this.activePreset;
+    if (this.isBuiltInPreset(src)) { this._toast("内置布局禁止重命名"); return false; }
+    const nn = prompt("输入新名称", src);
+    if (!nn || nn === src) return false;
+    if (this.presets[nn]) { this._toast("名称已存在"); return false; }
+    this.presets[nn] = this.presets[src];
+    delete this.presets[src];
+    this.activePreset = nn;
+    setActivePresetName(nn);
+    savePresets(this.presets);
+    return true;
+  }
+
+  deleteCurrentPreset() {
+    const src = this.activePreset;
+    if (this.isBuiltInPreset(src)) { this._toast("内置布局禁止删除"); return false; }
+    if (!confirm("确定删除「" + src + "」？")) return false;
+    delete this.presets[src];
+    savePresets(this.presets);
+    const rest = Object.keys(this.presets);
+    this._loadPreset(rest.length ? rest[0] : "full_con");
+    return true;
+  }
+
+  restoreCurrentDefault() {
+    const src = this.activePreset;
+    if (!this.isBuiltInPreset(src)) return false;
+    if (!confirm("确定将内置布局「" + src + "」恢复为默认？")) return false;
+    this.presets[src] = JSON.parse(JSON.stringify(FULL_CON));
+    savePresets(this.presets);
+    this._loadPreset(src);
+    this._toast("已恢复「" + src + "」为默认");
+    return true;
+  }
+
+  exportCurrentPreset() {
+    this._exportJson(this.activePreset + ".json", this.presets[this.activePreset]);
+  }
+
+  importPresetFromFile(file) {
+    return file.text().then((text) => {
+      const obj = JSON.parse(text);
+      const nn = prompt("保存为预设名称", file.name.replace(/\.json$/, ""));
+      if (!nn) return false;
+      this.presets[nn] = obj;
+      savePresets(this.presets);
+      this._loadPreset(nn);
+      return true;
+    }).catch(() => {
+      this._toast("导入失败：无效 JSON");
+      return false;
+    });
+  }
+
+  _exportJson(filename, obj) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   _showAddControl() {
@@ -537,14 +593,8 @@ class App {
     const raw = { id, x: spot.x, y: spot.y, w, h };
     if (baseId === "btnCustomRect" || baseId === "btnCustomCircle") {
       raw.isCustom = true;
-      const text = prompt("自定义按钮文字", "自定义") || "自定义";
-      const bits = prompt("绑定按键值（十六进制掩码，逗号分隔，可留空）", "") || "";
-      raw.customText = text;
-      raw.customBits = bits
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((s) => parseInt(s, s.startsWith("0x") ? 16 : 16) >>> 0);
+      raw.customText = prompt("自定义按钮文字", "自定义") || "自定义";
+      raw.customBits = [];
     }
     if (baseId === "customKeypad") {
       raw.isKeypad = true;
@@ -555,7 +605,7 @@ class App {
     this.layout.buttons.push(b);
     this.layout.selectedId = b.id;
     this.layout.render();
-    this._syncEditBar();
+    this.editor.onSelect(b.id);
   }
 
   _findFreeSpot(w, h) {

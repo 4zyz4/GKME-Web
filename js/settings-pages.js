@@ -2,7 +2,7 @@
 
 import { el, row, section, toggle, slider, select, button, colorInput } from "./dom.js";
 import { DISPLAY_MODES } from "./controls.js";
-import { DEFAULT_APPEARANCE } from "./layout.js";
+import { DEFAULT_APPEARANCE, normalizeButton } from "./layout.js";
 import { DEFAULT_SETTINGS, savePresets } from "./state.js";
 
 function ensureAppearance(app) {
@@ -69,108 +69,67 @@ export const PAGES = {
   },
 
   presets(app, root) {
-    const list = el("div", { class: "presetlist" });
-    const rebuild = () => {
-      list.innerHTML = "";
-      for (const name of Object.keys(app.presets)) {
-        const isActive = name === app.activePreset;
-        list.appendChild(
-          el("div", { class: "presetitem" + (isActive ? " active" : "") }, [
-            el("span", { class: "presetname", text: name }),
-            el("div", { class: "presetbtns" }, [
-              button("加载", () => {
-                app._loadPreset(name);
-                app._selectCategory("presets");
-              }),
-              button("重命名", () => {
-                const nn = prompt("新名称", name);
-                if (!nn || nn === name || app.presets[nn]) return;
-                app.presets[nn] = app.presets[name];
-                delete app.presets[name];
-                if (app.activePreset === name) {
-                  app.activePreset = nn;
-                  app._loadPreset(nn);
-                }
-                save(app);
-                rebuild();
-              }),
-              button(
-                "复制",
-                () => {
-                  let nn = name + "_copy";
-                  let i = 1;
-                  while (app.presets[nn]) nn = name + "_copy" + i++;
-                  app.presets[nn] = JSON.parse(JSON.stringify(app.presets[name]));
-                  save(app);
-                  rebuild();
-                },
-                "ghost"
-              ),
-              button(
-                "删除",
-                () => {
-                  if (name === "full_con") {
-                    app._toast("内置预设不可删除");
-                    return;
-                  }
-                  if (!confirm("删除预设 " + name + "?")) return;
-                  delete app.presets[name];
-                  save(app);
-                  rebuild();
-                },
-                "danger"
-              ),
-            ]),
-          ])
-        );
-      }
-    };
-    rebuild();
+    const build = () => {
+      root.innerHTML = "";
+      root.appendChild(el("div", { class: "presettitle", text: "布局预设" }));
 
-    root.appendChild(section("预设列表", [list]));
-    root.appendChild(
-      section("操作", [
-        el("div", { class: "btnrow" }, [
-          button("新建（当前布局）", () => {
-            const nn = prompt("新预设名称", "custom_" + (Object.keys(app.presets).length + 1));
-            if (!nn || app.presets[nn]) return;
-            app.presets[nn] = app.layout.serialize();
-            save(app);
-            rebuild();
+      const current = app.activePreset;
+      const isBuiltIn = app.isBuiltInPreset(current);
+
+      const chips = el("div", { class: "presetchips" });
+      const chip = (label, fn) => {
+        const b = button(label, fn);
+        b.classList.add("presetchip");
+        chips.appendChild(b);
+        return b;
+      };
+      chip("新建", () => { if (app.newPreset()) build(); });
+      chip("编辑", () => app.enterEditMode());
+      if (isBuiltIn) chip("恢复默认", () => { if (app.restoreCurrentDefault()) build(); });
+      chip("复制", () => { if (app.copyCurrentPreset()) build(); });
+      chip("导出", () => app.exportCurrentPreset());
+      chips.appendChild(
+        el("label", { class: "filebtn presetchip" }, [
+          "导入",
+          el("input", {
+            type: "file",
+            accept: ".json,application/json",
+            onchange: async (e) => {
+              const f = e.target.files[0];
+              if (!f) return;
+              if (await app.importPresetFromFile(f)) build();
+              e.target.value = "";
+            },
           }),
-          button("进入编辑模式", () => {
-            app.closeSettings();
-            app._toggleEdit(true);
-          }),
-          button("导出当前预设", () => exportJson(app.activePreset + ".json", app.layout.serialize())),
-        ]),
-        el(
-          "label",
-          { class: "filebtn" },
-          [
-            "导入预设…",
-            el("input", {
-              type: "file",
-              accept: ".json,application/json",
-              onchange: async (e) => {
-                const f = e.target.files[0];
-                if (!f) return;
-                try {
-                  const obj = JSON.parse(await f.text());
-                  const nn = prompt("保存为预设名称", f.name.replace(/\.json$/, ""));
-                  if (!nn) return;
-                  app.presets[nn] = obj;
-                  save(app);
-                  rebuild();
-                } catch {
-                  app._toast("导入失败：无效 JSON");
-                }
-              },
-            }),
-          ]
-        ),
-      ])
-    );
+        ])
+      );
+      if (!isBuiltIn) {
+        chip("重命名", () => { if (app.renameCurrentPreset()) build(); });
+        chip("删除", () => { if (app.deleteCurrentPreset()) build(); });
+      }
+      root.appendChild(chips);
+
+      root.appendChild(el("div", { class: "presetcurrent", text: "当前预设: " + current }));
+
+      const grid = el("div", { class: "presetgrid" });
+      for (const name of app.presetNames()) {
+        const active = name === app.activePreset;
+        const canvas = el("canvas", { class: "presetpreview" });
+        const card = el("div", { class: "presetcard" + (active ? " active" : "") }, [
+          canvas,
+          el("div", { class: "presetcardname", text: name }),
+        ]);
+        card.addEventListener("click", () => {
+          if (name === app.activePreset) return;
+          app._loadPreset(name);
+          build();
+        });
+        grid.appendChild(card);
+        requestAnimationFrame(() => drawPresetPreview(canvas, app.presets[name]));
+      }
+      root.appendChild(grid);
+    };
+    build();
   },
 
   physical(app, root) {
@@ -296,13 +255,52 @@ function save(app) {
   savePresets(app.presets);
 }
 
-function exportJson(filename, obj) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+// Miniature layout preview for a preset card (mirrors PresetPreviewView).
+function drawPresetPreview(canvas, preset) {
+  const raw = (preset && preset.buttons) || [];
+  const rect = canvas.getBoundingClientRect();
+  const cssW = Math.max(1, rect.width);
+  const cssH = Math.max(1, rect.height);
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (!raw.length) return;
+
+  const gridW = 120;
+  const gridH = 53;
+  const scale = Math.min(cssW / gridW, cssH / gridH);
+  const offX = (cssW - gridW * scale) / 2;
+  const offY = (cssH - gridH * scale) / 2;
+
+  for (const r of raw) {
+    const b = normalizeButton(r);
+    if (b.visible === false) continue;
+    const base = b.id.split("_")[0];
+    const bx = offX + b.x * scale;
+    const by = offY + b.y * scale;
+    const swapped = !b.lockAspect && (b.rotation === 90 || b.rotation === 270);
+    const bw = (swapped ? b.h : b.w) * scale;
+    const bh = (swapped ? b.w : b.h) * scale;
+    if (base === "dpadPad" || base === "customKeypad") {
+      const s = Math.min(bw, bh);
+      ctx.beginPath();
+      ctx.fillStyle = "#BBBBBB";
+      ctx.arc(bx + bw / 2, by + bh / 2, s / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (b.lockAspect) {
+      const r2 = Math.max(2, Math.min(b.w, b.h) * scale * 0.35);
+      ctx.beginPath();
+      ctx.fillStyle = "#AAAAAA";
+      ctx.arc(bx + bw / 2, by + bh / 2, r2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "#BBBBBB";
+      ctx.fillRect(bx, by, bw, bh);
+    }
+  }
 }
 
 function setDeviceNameSafe(name) {
