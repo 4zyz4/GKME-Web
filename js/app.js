@@ -14,7 +14,7 @@ import { Haptics } from "./haptics.js";
 import { PAGES } from "./settings-pages.js";
 import { FULL_CON } from "./presets.js";
 import { LayoutEditor } from "./editor.js";
-import { showConfirm, showInput } from "./dialog.js";
+import { showConfirm, showInput, showIosFullscreenHint } from "./dialog.js";
 import { setForceLandscape } from "./orientation.js";
 
 // ── Settings animation constants (mirrors MainActivitySettings.kt) ──
@@ -146,7 +146,7 @@ class App {
     if (!document.fullscreenElement && el.requestFullscreen) {
       el.requestFullscreen().catch(() => {});
     } else if (this._isIOS() && !navigator.standalone) {
-      this._toast("iOS 请点「分享 → 添加到主屏幕」以全屏运行");
+      showIosFullscreenHint();
     }
 
     if (screen.orientation && screen.orientation.lock) {

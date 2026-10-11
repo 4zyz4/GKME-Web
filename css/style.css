@@ -742,6 +742,17 @@ html.force-landscape body {
 .dlgbtn.primary { background: var(--accent-dim); color: var(--text); }
 .dlgbtn:active { filter: brightness(1.15); }
 
+/* ── iOS fullscreen guidance (CustomDialog.showIosFullscreenHint) ── */
+.ioshintbox { border: 1px solid var(--accent); }
+.ioshintmsg {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.9;
+  margin: 18px 0 22px;
+}
+.ioshintmsg .hl { color: var(--accent); font-weight: 700; }
+.ios-share-icon { display: inline-block; vertical-align: -3px; color: var(--accent); }
+
 @media (max-width: 560px) {
   #settingsNav { width: 96px; }
   .navitem { font-size: 12px; }
