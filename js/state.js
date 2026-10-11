@@ -25,12 +25,6 @@ export const DEFAULT_SETTINGS = {
     swapPhoneMotors: false,
     swapControllerMotors: false,
   },
-  mouse: {
-    pointerAcceleration: 1,
-    scrollSensitivity: 0.1,
-    invertScrollV: false,
-    invertScrollH: false,
-  },
   screen: {
     keepAwake: true,
     screenOff: false,
@@ -127,8 +121,8 @@ export function setActivePresetName(name) {
 }
 
 // ── Live input state ──
-// Aggregates touch controls, physical controller forwarding and keyboard/mouse
-// input into one GamepadInput-shaped snapshot.
+// Aggregates touch controls, physical controller forwarding and keyboard input
+// into one GamepadInput-shaped snapshot.
 export class InputState {
   constructor() {
     this.buttons = 0; // GKME bitmask (uint32)
@@ -139,27 +133,20 @@ export class InputState {
     this.rightStickY = 0;
     this.leftTrigger = 0;
     this.rightTrigger = 0;
-    this.mouseDx = 0;
-    this.mouseDy = 0;
-    this.mouseWheel = 0;
-    this.mousePan = 0;
-    this.mouseButtons = 0;
     this.touches = [];
     // keyboard
     this.kbModifiers = 0;
     this.kbKeys = new Set(); // usages
-    // sources keep button/dpad/mouse contributions independent
+    // sources keep button/dpad contributions independent
     this._touchButtons = 0;
     this._physicalButtons = 0;
     this._customBits = 0;
-    this._mouseTouch = 0;
-    this._mouseGesture = 0;
     this._touchDpad = 0;
     this._physicalDpad = 0;
   }
 
   recomputeButtons() {
-    this.buttons = (this._touchButtons | this._physicalButtons | this._customBits | this._mouseTouch | this._mouseGesture) >>> 0;
+    this.buttons = (this._touchButtons | this._physicalButtons | this._customBits) >>> 0;
     this.dpad = this._touchDpad | this._physicalDpad;
   }
 
@@ -175,11 +162,6 @@ export class InputState {
       rightStickY: this.rightStickY,
       leftTrigger: this.leftTrigger,
       rightTrigger: this.rightTrigger,
-      mouseDx: this.mouseDx,
-      mouseDy: this.mouseDy,
-      mouseWheel: this.mouseWheel,
-      mousePan: this.mousePan,
-      mouseButtons: this.mouseButtons,
       touches: this.touches,
       scanCodes,
       modifiers: this.kbModifiers >>> 0,

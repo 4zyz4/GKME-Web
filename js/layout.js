@@ -54,11 +54,6 @@ const DEFAULTS = {
   sensitivityCurve: null,
   keypadTexts: null,
   keypadBits: null,
-  mouseSensitivity: 1,
-  scrollSensitivity: 0.1,
-  mouseMoveSlop: 4,
-  invertScrollV: false,
-  invertScrollH: false,
 };
 
 export function normalizeButton(raw) {
@@ -75,7 +70,6 @@ export function normalizeButton(raw) {
   if (c && c.isTrigger) b.isTrigger = true;
   if (c && c.isJoystick) { b.isJoystick = true; b.axis = c.axis; }
   if (c && c.isTouchpad) b.isTouchpad = true;
-  if (c && c.isMousepad) b.isMousepad = true;
   if (c && c.isDpadPad) b.isDpadPad = true;
   if (c && c.isDpad) b.isDpad = true;
   if (c && c.isSettings) b.isSettings = true;
@@ -141,7 +135,7 @@ export const DEFAULT_APPEARANCE = {
 
 // Corer radius / rounding constants from AppearanceApplier.kt (× density).
 export const CORNER_RADIUS_DP = 12; // buttons
-export const TOUCHPAD_RADIUS_DP = 10; // touchpad / mousepad
+export const TOUCHPAD_RADIUS_DP = 10; // touchpad
 export const HANDLE_SIZE_DP = 8;
 export const MARKER_DIST_DP = 4;
 
@@ -275,7 +269,11 @@ export class GamepadLayout {
     this.preset = preset || { buttons: [] };
     // Mirrors GamepadLayout.loadPreset: every layout always carries a settings
     // button, appended when the preset (e.g. a freshly created one) lacks it.
-    const raw = (this.preset.buttons || []).slice();
+    // Drop legacy mouse controls (mousepad / 鼠标 buttons) left over from
+    // presets saved before mouse mapping was removed.
+    const raw = (this.preset.buttons || [])
+      .filter((b) => baseId(b.id) !== "mousepad" && !baseId(b.id).startsWith("btnMouse"))
+      .slice();
     if (!raw.some((b) => baseId(b.id) === "btnSettings")) {
       raw.push({ id: "btnSettings", x: (GRID_COLS - 6) / 2, y: 0, w: 6, h: 6, lockAspect: true });
     }
@@ -345,14 +343,6 @@ export class GamepadLayout {
           o.followAreaY = b.followAreaY | 0;
           o.followAreaW = b.followAreaW | 0;
           o.followAreaH = b.followAreaH | 0;
-        }
-        if (base === "mousepad") {
-          if (b.mouseSensitivity !== 1) o.mouseSensitivity = b.mouseSensitivity;
-          if (b.scrollSensitivity !== 0.1) o.scrollSensitivity = b.scrollSensitivity;
-          if (b.mouseMoveSlop !== 4) o.mouseMoveSlop = b.mouseMoveSlop;
-          if (b.invertScrollV) o.invertScrollV = true;
-          if (b.invertScrollH) o.invertScrollH = true;
-          if (b.doubleClickEnable === false) o.doubleClickEnable = false;
         }
         if (b.linearTriggerEnabled) {
           o.linearTriggerEnabled = true;
@@ -490,7 +480,7 @@ export class GamepadLayout {
       const bid = baseId(b.id);
       let color;
       let width;
-      if (b.isTouchpad || b.isMousepad) {
+      if (b.isTouchpad) {
         color = this.appearance.tpTriggerOutlineColor;
         width = this.appearance.tpTriggerOutlineWidth;
       } else if (b.isDpadPad || b.isKeypad) {
@@ -598,7 +588,7 @@ export class GamepadLayout {
     if (b.isJoystick) this._drawJoystick(b, r);
     else if (b.isDpadPad) this._drawDpadPad(b, r, active);
     else if (b.isKeypad) this._drawKeypad(b, r);
-    else if (b.isTouchpad || b.isMousepad) this._drawPad(b, r, active);
+    else if (b.isTouchpad) this._drawPad(b, r, active);
     else this._drawButton(b, r, active);
 
     ctx.restore();
@@ -1035,7 +1025,7 @@ export class GamepadLayout {
     ctx.fillText(text, cx, cy);
   }
 
-  // ── touchpad / mousepad (AppearanceApplier.applyToTouchpad) ──
+  // ── touchpad (AppearanceApplier.applyToTouchpad) ──
   _drawPad(b, r, active) {
     const ctx = this.ctx;
     const app = this.appearance;
@@ -1282,11 +1272,6 @@ export class GamepadLayout {
       this._updateTouchpad(b);
       return;
     }
-    if (b.isMousepad) {
-      this._pointers.set(e.pointerId, { id: b.id, kind: "mousepad", b, startX: px, startY: py, lastX: px, lastY: py, startT: performance.now(), moved: false });
-      this.controlActive.set(b.id, true);
-      return;
-    }
     if (b.isKeypad) {
       this._pointers.set(e.pointerId, { id: b.id, kind: "keypad", b });
       this._updateKeypad(e.pointerId, px, py);
@@ -1337,7 +1322,6 @@ export class GamepadLayout {
     else if (info.kind === "dpad") this._updateDpad(e.pointerId, px, py);
     else if (info.kind === "keypad") this._updateKeypad(e.pointerId, px, py);
     else if (info.kind === "trigger") this._updateTrigger(e.pointerId, px, py);
-    else if (info.kind === "mousepad") this._updateMousepad(e.pointerId, px, py);
     else if (info.kind === "touchpad") { info.px = px; info.py = py; this._updateTouchpad(info.b); }
   }
 
@@ -1387,8 +1371,6 @@ export class GamepadLayout {
         this.controlActive.set(b.id, false);
       }
       this.render();
-    } else if (info.kind === "mousepad") {
-      this._finishMousepad(info);
     } else if (info.kind === "touchpad") {
       this._updateTouchpad(info.b);
       const remaining = [...this._pointers.values()].filter(
@@ -1694,25 +1676,6 @@ export class GamepadLayout {
     }));
     this.cb.onTouchpad && this.cb.onTouchpad(touches);
     this.render();
-  }
-
-  _updateMousepad(pointerId, px, py) {
-    const info = this._pointers.get(pointerId);
-    if (!info) return;
-    const dx = px - info.lastX;
-    const dy = py - info.lastY;
-    info.lastX = px;
-    info.lastY = py;
-    if (Math.hypot(px - info.startX, py - info.startY) > (info.b.mouseMoveSlop || 4)) info.moved = true;
-    this.cb.onMouseMove && this.cb.onMouseMove(dx, dy, info.b);
-  }
-
-  _finishMousepad(info) {
-    const dt = performance.now() - info.startT;
-    if (!info.moved && dt < 250) {
-      this.cb.onMouseTap && this.cb.onMouseTap(info.b);
-    }
-    this.controlActive.set(info.b.id, false);
   }
 
   // ── edit mode ──

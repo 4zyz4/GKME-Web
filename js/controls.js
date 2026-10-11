@@ -21,11 +21,6 @@ export const BIT = {
   HOME: 0x10000,
   TOUCHPAD_CLICK: 0x20000,
   MIC_MUTE: 0x40000,
-  MOUSE_LMB: 0x80000,
-  MOUSE_RMB: 0x100000,
-  MOUSE_MMB: 0x200000,
-  MOUSE_BACK: 0x4000000,
-  MOUSE_FORWARD: 0x8000000,
 };
 
 export const DPAD = { UP: 1, DOWN: 2, LEFT: 4, RIGHT: 8 };
@@ -105,7 +100,6 @@ export const CONTROLS = {
   leftJoystick: { name: "手柄：左摇杆", isJoystick: true, axis: "left", lockAspect: true },
   rightJoystick: { name: "手柄：右摇杆", isJoystick: true, axis: "right", lockAspect: true },
   touchpad: { name: "触摸板（手柄）", isTouchpad: true, lockAspect: false },
-  mousepad: { name: "触摸板（鼠标）", isMousepad: true, lockAspect: false },
   dpadPad: { name: "一体十字键", isDpadPad: true, lockAspect: true },
   btnDpadUp: { name: "上方向", isDpad: true, bit: BIT.DPAD_BIT_UP, lockAspect: true },
   btnDpadDown: { name: "下方向", isDpad: true, bit: BIT.DPAD_BIT_DOWN, lockAspect: true },
@@ -121,11 +115,6 @@ export const CONTROLS = {
   customKeypad: { name: "自定义按键盘", isKeypad: true, lockAspect: true },
   btnCustomCircle: { name: "自定义(圆)", isCustom: true, lockAspect: true },
   btnCustomRect: { name: "自定义(方)", isCustom: true, lockAspect: false },
-  btnMouseLMB: { name: "鼠标：LMB", bit: BIT.MOUSE_LMB, lockAspect: false },
-  btnMouseRMB: { name: "鼠标：RMB", bit: BIT.MOUSE_RMB, lockAspect: false },
-  btnMouseMMB: { name: "鼠标：MMB", bit: BIT.MOUSE_MMB, lockAspect: false },
-  btnMouseBack: { name: "鼠标：后退", bit: BIT.MOUSE_BACK, lockAspect: false },
-  btnMouseForward: { name: "鼠标：前进", bit: BIT.MOUSE_FORWARD, lockAspect: false },
   btnSettings: { name: "设置", isSettings: true, lockAspect: true },
 };
 
@@ -158,7 +147,6 @@ for (const [id, code] of Object.entries(KB_KEY_CODES)) {
 export const DOUBLE_CLICK_IDS = new Set(["leftJoystick", "rightJoystick", "touchpad"]);
 export const JOYSTICK_IDS = new Set(["leftJoystick", "rightJoystick"]);
 export const AREA_IDS = new Set(["leftJoystick", "rightJoystick", "touchpad", "dpadPad", "customKeypad"]);
-export const MOUSEPAD_IDS = new Set(["mousepad"]);
 
 export function baseId(id) {
   return id.split("_")[0];
@@ -167,7 +155,6 @@ export function baseId(id) {
 // Default grid sizes for newly added controls (w, h).
 export const DEFAULT_SIZE = {
   touchpad: [34, 22],
-  mousepad: [34, 22],
   leftJoystick: [17, 17],
   rightJoystick: [17, 17],
   dpadPad: [17, 17],
@@ -237,11 +224,6 @@ export const BIT_NAMES = {
   [BIT.DPAD_BIT_DOWN]: "下方向",
   [BIT.DPAD_BIT_LEFT]: "左方向",
   [BIT.DPAD_BIT_RIGHT]: "右方向",
-  [BIT.MOUSE_LMB]: "鼠标：LMB",
-  [BIT.MOUSE_RMB]: "鼠标：RMB",
-  [BIT.MOUSE_MMB]: "鼠标：MMB",
-  [BIT.MOUSE_BACK]: "鼠标：后退",
-  [BIT.MOUSE_FORWARD]: "鼠标：前进",
 };
 
 export function bitName(bit) {
@@ -259,10 +241,6 @@ export const OUTPUT_PICKER_GROUPS = [
       BIT.DPAD_BIT_UP, BIT.DPAD_BIT_DOWN, BIT.DPAD_BIT_LEFT, BIT.DPAD_BIT_RIGHT,
     ],
   },
-  {
-    title: "鼠标",
-    bits: [BIT.MOUSE_LMB, BIT.MOUSE_RMB, BIT.MOUSE_MMB, BIT.MOUSE_BACK, BIT.MOUSE_FORWARD],
-  },
 ];
 
 // Control ids treated as "buttons" by the editor panel (see FloatingEditorPanel.BUTTON_IDS).
@@ -270,7 +248,6 @@ const BUTTON_IDS = new Set([
   "btnDpadUp", "btnDpadDown", "btnDpadLeft", "btnDpadRight",
   "btnY", "btnA", "btnX", "btnB", "btnLT", "btnLB", "btnRT", "btnRB",
   "btnSelect", "btnHome", "btnMenu", "btnShare", "btnLS", "btnRS", "btnMic",
-  "btnMouseLMB", "btnMouseRMB", "btnMouseMMB", "btnMouseBack", "btnMouseForward",
 ]);
 
 export function isButtonId(id) {
@@ -313,10 +290,5 @@ export function controlLabel(id, displayMode) {
   // Direction buttons draw arrow icons.
   if (b.startsWith("btnDpad")) return "";
 
-  const labels = {
-    btnMouseLMB: "LMB", btnMouseRMB: "RMB", btnMouseMMB: "MMB",
-    btnMouseBack: "BACK", btnMouseForward: "FWD",
-  };
-  if (labels[b] !== undefined) return labels[b];
   return "";
 }

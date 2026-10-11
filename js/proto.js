@@ -126,8 +126,7 @@ function encodeTouch(w, field, pt) {
 /**
  * Encode GamepadInput. `inp` fields (all optional):
  *   buttons, leftStickX/Y, rightStickX/Y, leftTrigger, rightTrigger, dpad,
- *   batteryLevel, isCharging, touches (array),
- *   mouseDx/Dy/Wheel/Pan, mouseButtons, scanCodes (array), modifiers
+ *   batteryLevel, isCharging, touches (array), scanCodes (array), modifiers
  */
 export function encodeGamepadInput(inp) {
   const w = new Writer();
@@ -147,11 +146,6 @@ export function encodeGamepadInput(inp) {
       encodeTouch(w, 22, pt);
     }
   }
-  w.sint(23, inp.mouseDx | 0);
-  w.sint(24, inp.mouseDy | 0);
-  w.sint(25, inp.mouseWheel | 0);
-  w.sint(26, inp.mousePan | 0);
-  w.uint(27, inp.mouseButtons >>> 0);
   w.packedUints(28, inp.scanCodes);
   w.uint(30, inp.modifiers >>> 0);
   return w.toBytes();

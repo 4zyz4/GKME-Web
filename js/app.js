@@ -147,14 +147,6 @@ class App {
       onTouchpad: (touches) => {
         this.state.touches = touches;
       },
-      onMouseMove: (dx, dy, b) => {
-        const acc = b.mouseSensitivity || 1;
-        this.state.mouseDx += Math.round(dx * acc);
-        this.state.mouseDy += Math.round(dy * acc);
-      },
-      onMouseTap: (b) => {
-        this._mouseClick(BIT.MOUSE_LMB);
-      },
       onCustomBits: (bits, down) => this._applyCustomBits(bits, down),
       onKey: (code, down) => this._onKey(code, down),
       onEditChanged: () => this.editor && this.editor.onEditChanged(),
@@ -198,16 +190,6 @@ class App {
     // onButtonDown/Up, so fire the button pulse here too (skip empty mappings
     // to avoid double pulses when sliding across an unconfigured keypad).
     if (hasBits) this.haptics.buttonPulse(down);
-  }
-
-  _mouseClick(bit) {
-    if (this.state._mouseTouch & bit) return;
-    this.state._mouseTouch = (this.state._mouseTouch | bit) >>> 0;
-    clearTimeout(this._mouseClicks && this._mouseClicks[bit]);
-    this._mouseClicks = this._mouseClicks || {};
-    this._mouseClicks[bit] = setTimeout(() => {
-      this.state._mouseTouch = (this.state._mouseTouch & ~bit) >>> 0;
-    }, 60);
   }
 
   _onKey(code, down) {
@@ -277,9 +259,9 @@ class App {
    *  device actually is on screen (and out of the settings overlay). */
   _positionStatus() {
     if (!this.layout || !this.topbar) return;
-    const tp = this.layout.buttons.find((b) => b.isTouchpad || b.isMousepad);
-    // Mirrors Android: the status label is a child of the touchpad/mousepad
-    // view, so it is only shown when such a control exists in the layout.
+    const tp = this.layout.buttons.find((b) => b.isTouchpad);
+    // Mirrors Android: the status label is a child of the touchpad view, so it
+    // is only shown when such a control exists in the layout.
     this.topbar.classList.toggle("no-touchpad", !tp);
     let left;
     let top;
@@ -328,11 +310,6 @@ class App {
     st.kbModifiers = this.kbModifiers;
     const input = st.toInput();
     this.conn.sendGamepadInput(input);
-    // Mouse deltas are consumed each frame.
-    st.mouseDx = 0;
-    st.mouseDy = 0;
-    st.mouseWheel = 0;
-    st.mousePan = 0;
   }
 
   // ── Physical controller forwarding (Gamepad API) ──
@@ -571,9 +548,8 @@ class App {
     grid.className = "modalgrid";
     for (const [id, meta] of Object.entries(CONTROLS)) {
       if (id === "btnSettings") continue;
-      // Keyboard and mouse controls are not part of the web build.
+      // Keyboard controls are not part of the web build.
       if (meta.isKeyboard) continue;
-      if (id === "mousepad" || id.startsWith("btnMouse")) continue;
       const b = document.createElement("button");
       b.textContent = meta.name;
       b.addEventListener("click", () => {

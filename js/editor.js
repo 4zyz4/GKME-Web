@@ -3,7 +3,7 @@
 // Re-implements the UI of com.zyz4.gkme.view.FloatingEditorPanel: a draggable,
 // collapsible panel with 保存 / 放弃 / 添加 actions and a scrollable area of
 // per-control parameters. Android-only features (gyro, global settings page,
-// sensitivity-curve editor, mouse gestures) are intentionally omitted.
+// sensitivity-curve editor) are intentionally omitted.
 
 import { el } from "./dom.js";
 import { showConfirm } from "./dialog.js";
