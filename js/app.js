@@ -16,6 +16,14 @@ import { FULL_CON } from "./presets.js";
 import { LayoutEditor } from "./editor.js";
 import { showConfirm, showInput } from "./dialog.js";
 
+// ── Settings animation constants (mirrors MainActivitySettings.kt) ──
+const SETTINGS_OPEN_DURATION = 300;
+const SETTINGS_CLOSE_DURATION = 300;
+const CATEGORY_SWITCH_DURATION = 150;
+const PAGE_SWITCH_OFFSET = 24; // dp (1 CSS px ≈ 1 dp)
+// Android easeOutQuint(): PathInterpolator(0.22f, 1f, 0.36f, 1f).
+const EASE_OUT_QUINT = "cubic-bezier(0.22, 1, 0.36, 1)";
+
 class App {
   constructor() {
     this.settings = loadSettings();
@@ -371,22 +379,105 @@ class App {
   }
 
   // ── Settings UI ──
+  /** Center of the reveal (in the panel's viewport space) and the radius
+   *  needed to cover it, anchored on the settings button when possible. */
+  _settingsRevealGeometry() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    let cx = w / 2;
+    let cy = h / 2;
+    const button = this.layout && this.layout.buttons.find((b) => b.isSettings && b.visible);
+    if (button) {
+      const r = this.layout.gridRect(button);
+      cx = r.x + r.w / 2;
+      cy = r.y + r.h / 2;
+    }
+    const maxRadius = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+    return { cx, cy, maxRadius };
+  }
+
+  /** A full-screen rectangle with a circular hole of radius `r` at (cx, cy),
+   *  i.e. the inverse of a circle clip. The circle is wound opposite to the
+   *  outer rectangle so the nonzero fill rule punches it out — this mirrors
+   *  CircularRevealLayout.clipOutPath (the panel stays visible everywhere but
+   *  the growing hole). */
+  _settingsHolePath(cx, cy, r) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const rr = Math.max(r, 0.0001);
+    const d =
+      `M0 0 H${w} V${h} H0 Z ` +
+      `M${cx - rr} ${cy} a${rr} ${rr} 0 1 0 ${2 * rr} 0 a${rr} ${rr} 0 1 0 ${-2 * rr} 0 Z`;
+    return `path("${d}")`;
+  }
+
   openSettings() {
-    this.settingsPanel.classList.remove("hidden");
+    const panel = this.settingsPanel;
+    if (!panel.classList.contains("hidden")) return;
     this.topbar.classList.add("hidden");
     this.toast.classList.remove("show");
     this._renderSettingsNav();
-    this._selectCategory(this._category || "connection");
+    this._selectCategory(this._category || "connection", false);
+
+    // Circular reveal expanding from the settings button (mirrors
+    // MainActivity.animateSettingsOpen / ViewAnimationUtils.createCircularReveal).
+    const { cx, cy, maxRadius } = this._settingsRevealGeometry();
+    this._settingsAnim?.cancel();
+    panel.style.clipPath = `circle(0px at ${cx}px ${cy}px)`;
+    panel.classList.remove("hidden");
+    const anim = panel.animate(
+      [
+        { clipPath: `circle(0px at ${cx}px ${cy}px)` },
+        { clipPath: `circle(${maxRadius}px at ${cx}px ${cy}px)` },
+      ],
+      { duration: SETTINGS_OPEN_DURATION, easing: EASE_OUT_QUINT, fill: "both" }
+    );
+    this._settingsAnim = anim;
+    anim.onfinish = () => {
+      if (this._settingsAnim !== anim) return;
+      this._settingsAnim = null;
+      anim.cancel();
+      panel.style.clipPath = "";
+    };
   }
 
   closeSettings() {
-    this.settingsPanel.classList.add("hidden");
-    this.topbar.classList.remove("hidden");
-    this._positionStatus();
-    // Persist whatever was edited.
-    saveSettings(this.settings);
-    this.presets[this.activePreset] = this.layout.serialize();
-    savePresets(this.presets);
+    const panel = this.settingsPanel;
+    const finish = () => {
+      panel.classList.add("hidden");
+      this.topbar.classList.remove("hidden");
+      this._positionStatus();
+      // Persist whatever was edited.
+      saveSettings(this.settings);
+      this.presets[this.activePreset] = this.layout.serialize();
+      savePresets(this.presets);
+    };
+
+    if (panel.classList.contains("hidden")) {
+      finish();
+      return;
+    }
+
+    // Grow a circular hole from the settings button to erase the panel outward
+    // (mirrors MainActivity.animateSettingsClose / CircularRevealLayout).
+    const { cx, cy, maxRadius } = this._settingsRevealGeometry();
+    this._settingsAnim?.cancel();
+    panel.style.clipPath = this._settingsHolePath(cx, cy, 0);
+    const anim = panel.animate(
+      [
+        { clipPath: this._settingsHolePath(cx, cy, 0) },
+        { clipPath: this._settingsHolePath(cx, cy, maxRadius) },
+      ],
+      { duration: SETTINGS_CLOSE_DURATION, easing: EASE_OUT_QUINT, fill: "both" }
+    );
+    this._settingsAnim = anim;
+    anim.onfinish = () => {
+      if (this._settingsAnim !== anim) return;
+      this._settingsAnim = null;
+      anim.cancel();
+      panel.style.clipPath = "";
+      finish();
+    };
   }
 
   _renderSettingsNav() {
@@ -410,14 +501,59 @@ class App {
     }
   }
 
-  _selectCategory(id) {
+  _selectCategory(id, animate = true) {
+    const previous = this._category;
     this._category = id;
+    const shouldAnimate = animate && previous !== undefined && previous !== id;
+
+    // Sidebar highlight: wipe the fill left→right while cross-fading the label
+    // (mirrors MainActivity.animateSidebarItem / SidebarItemDrawable).
     for (const b of this.settingsNav.querySelectorAll(".navitem")) {
+      if (!shouldAnimate) b.style.transition = "none";
       b.classList.toggle("active", b.dataset.cat === id);
+      if (!shouldAnimate) requestAnimationFrame(() => { b.style.transition = ""; });
     }
-    this.settingsBody.innerHTML = "";
+
+    const oldPage = this._pageEl || null;
+    const newPage = document.createElement("div");
+    newPage.className = "settingspage";
     const builder = PAGES[id];
-    if (builder) builder(this, this.settingsBody);
+    if (builder) builder(this, newPage);
+
+    if (shouldAnimate && oldPage) {
+      // Old page slides up + fades out; new page rises from below + fades in
+      // (mirrors MainActivity.animatePageSwitch).
+      for (const c of [...this.settingsBody.children]) {
+        if (c !== oldPage) c.remove();
+      }
+      oldPage.getAnimations().forEach((a) => a.cancel());
+      oldPage.style.transform = "";
+      oldPage.style.opacity = "";
+      this.settingsBody.appendChild(newPage);
+      newPage.scrollTop = 0;
+
+      const outAnim = oldPage.animate(
+        [
+          { transform: "translateY(0)", opacity: 1 },
+          { transform: `translateY(-${PAGE_SWITCH_OFFSET}px)`, opacity: 0 },
+        ],
+        { duration: CATEGORY_SWITCH_DURATION, easing: EASE_OUT_QUINT, fill: "forwards" }
+      );
+      outAnim.onfinish = () => oldPage.remove();
+
+      newPage.animate(
+        [
+          { transform: `translateY(${PAGE_SWITCH_OFFSET}px)`, opacity: 0 },
+          { transform: "translateY(0)", opacity: 1 },
+        ],
+        { duration: CATEGORY_SWITCH_DURATION, easing: EASE_OUT_QUINT }
+      );
+    } else {
+      this.settingsBody.innerHTML = "";
+      this.settingsBody.appendChild(newPage);
+      newPage.scrollTop = 0;
+    }
+    this._pageEl = newPage;
   }
 
   /** Rebuild pages whose device list depends on the connected gamepads. */
