@@ -99,9 +99,15 @@ class App {
 
   _enterFullscreen() {
     const el = document.documentElement;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
     if (!document.fullscreenElement && el.requestFullscreen) {
       el.requestFullscreen().catch(() => {});
+    } else if (isIOS && !navigator.standalone) {
+      this._toast("iOS 请点「分享 → 添加到主屏幕」以全屏运行");
     }
+
     if (screen.orientation && screen.orientation.lock) {
       screen.orientation.lock("landscape").catch(() => {});
     }
