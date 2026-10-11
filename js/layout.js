@@ -254,6 +254,11 @@ export class GamepadLayout {
     this._dpr = Math.max(1, window.devicePixelRatio || 1);
     this._layout = { originX: 0, originY: 0, cell: 1 };
 
+    // Grid overlay fade (mirrors GamepadLayout.animateGridTo): 0 hidden, 1 shown.
+    // It only fades in while a control is being dragged/resized in edit mode.
+    this._gridAlpha = 0;
+    this._gridAnim = null;
+
     this._bind();
     this.resize();
   }
@@ -397,6 +402,7 @@ export class GamepadLayout {
     this.editMode = true;
     this.selectedId = null;
     this._adjustingFollowArea = false;
+    this._resetGrid();
     this.render();
   }
 
@@ -405,6 +411,7 @@ export class GamepadLayout {
     this.selectedId = null;
     this._edit = null;
     this._adjustingFollowArea = false;
+    this._resetGrid();
     this.render();
   }
 
@@ -426,6 +433,35 @@ export class GamepadLayout {
   exitFollowAreaAdjust() {
     this._adjustingFollowArea = false;
     this.render();
+  }
+
+  // Grid overlay fade — mirrors GamepadLayout.animateGridTo (200 ms). Fades in
+  // only while a control drag/resize is active, fades out once it ends.
+  _animateGridTo(target) {
+    if (this._gridAnim) {
+      cancelAnimationFrame(this._gridAnim);
+      this._gridAnim = null;
+    }
+    const from = this._gridAlpha;
+    if (from === target) return;
+    const start = performance.now();
+    const duration = 200;
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      this._gridAlpha = from + (target - from) * t;
+      this.render();
+      if (t < 1) this._gridAnim = requestAnimationFrame(step);
+      else this._gridAnim = null;
+    };
+    this._gridAnim = requestAnimationFrame(step);
+  }
+
+  _resetGrid() {
+    if (this._gridAnim) {
+      cancelAnimationFrame(this._gridAnim);
+      this._gridAnim = null;
+    }
+    this._gridAlpha = 0;
   }
 
   // Partial update of an existing button, preserving canvas-only fields (w/h).
@@ -479,11 +515,15 @@ export class GamepadLayout {
     ctx.drawImage(img, (this.cssW - w) / 2, (this.cssH - h) / 2, w, h);
   }
 
-  // GamepadRenderer.drawGrid — 1px #787878 lines at gridAlpha (170/255).
+  // GamepadRenderer.drawGrid — 1px #787878 lines at gridAlpha (170/255), the
+  // overlay only visible while dragging/resizing (see _animateGridTo).
   _drawGrid() {
+    if (this._gridAlpha <= 0) return;
     const ctx = this.ctx;
     const { cell } = this._layout;
-    ctx.strokeStyle = "rgba(120,120,120,0.667)";
+    ctx.save();
+    ctx.globalAlpha *= this._gridAlpha * 0.667;
+    ctx.strokeStyle = "rgb(120,120,120)";
     ctx.lineWidth = 1;
     for (let x = 0; x <= GRID_COLS; x++) {
       ctx.beginPath();
@@ -497,6 +537,7 @@ export class GamepadLayout {
       ctx.lineTo(this.cssW, y * cell);
       ctx.stroke();
     }
+    ctx.restore();
   }
 
   // 控件描边粗细以「实际屏幕像素」为准：canvas 已按 _dpr 缩放，
@@ -2030,12 +2071,14 @@ export class GamepadLayout {
     if (this.selectedId && this._hitHandle(px, py)) {
       const b = this.getButton(this.selectedId);
       this._edit = { pointerId: e.pointerId, mode: "resize", b, start: { ...b }, gx: px, gy: py };
+      this._animateGridTo(1);
       return;
     }
     const hit = this._hitTest(px, py, false);
     if (hit) {
       this.selectedId = hit.id;
       this._edit = { pointerId: e.pointerId, mode: "move", b: hit, start: { x: hit.x, y: hit.y }, gx: px, gy: py };
+      this._animateGridTo(1);
     } else {
       this.selectedId = null;
       this._edit = null;
@@ -2078,6 +2121,7 @@ export class GamepadLayout {
   _editUp(e) {
     if (this._edit && this._edit.pointerId === e.pointerId) {
       this._edit = null;
+      this._animateGridTo(0);
       this.cb.onEditEnd && this.cb.onEditEnd();
     }
   }
