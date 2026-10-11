@@ -187,6 +187,7 @@ class App {
   }
 
   _applyCustomBits(bits, down) {
+    const hasBits = !!(bits && bits.length);
     for (const bit of bits || []) {
       if (down) {
         this.state._customBits = (this.state._customBits | bit) >>> 0;
@@ -195,6 +196,10 @@ class App {
       }
     }
     this._sendFrame();
+    // Custom buttons / custom keypad emit through this path instead of
+    // onButtonDown/Up, so fire the button pulse here too (skip empty mappings
+    // to avoid double pulses when sliding across an unconfigured keypad).
+    if (hasBits) this.haptics.buttonPulse(down);
   }
 
   _mouseClick(bit) {
