@@ -79,8 +79,8 @@ export function normalizeButton(raw) {
 }
 
 // Appearance defaults, transposed 1:1 from AppSettings.kt (SOLID_COLOR fills).
-// Widths are in CSS px, which the gamepad canvas treats as dp (the page is
-// rendered with viewport width=device-width, so 1 CSS px ≈ 1 dp on a phone).
+// 描边宽度（*OutlineWidth）以「实际屏幕像素」为准，绘制时经 _outlineW 换算；
+// 其余尺寸单位为 CSS px（页面以 viewport width=device-width 渲染，近似 dp）。
 export const DEFAULT_APPEARANCE = {
   // ── 背景 ──
   bgFillType: 0, // 0 = SOLID_COLOR, 1 = IMAGE
@@ -490,6 +490,12 @@ export class GamepadLayout {
     }
   }
 
+  // 控件描边粗细以「实际屏幕像素」为准：canvas 已按 _dpr 缩放，
+  // 因此把像素值换算成当前变换下的用户单位需除以 _dpr。
+  _outlineW(px) {
+    return px / this._dpr;
+  }
+
   // GamepadRenderer follow-area rectangles (joystick / touchpad / dpadPad / keypad).
   _drawFollowAreas() {
     const ctx = this.ctx;
@@ -521,7 +527,7 @@ export class GamepadLayout {
       ctx.save();
       ctx.globalAlpha *= op;
       ctx.strokeStyle = color;
-      ctx.lineWidth = width;
+      ctx.lineWidth = this._outlineW(width);
       ctx.strokeRect(l, t, w, h);
       ctx.restore();
     }
@@ -531,9 +537,10 @@ export class GamepadLayout {
   _drawLinearTriggerBoxes() {
     const ctx = this.ctx;
     const { cell } = this._layout;
+    const lw = this._outlineW(this.appearance.linearTriggerBoxOutlineWidth);
+    if (!(lw > 0)) return;
     ctx.strokeStyle = this.appearance.linearTriggerBoxOutlineColor;
-    ctx.lineWidth = this.appearance.linearTriggerBoxOutlineWidth;
-    if (!(ctx.lineWidth > 0)) return;
+    ctx.lineWidth = lw;
     for (const b of this.buttons) {
       if (!b.linearTriggerEnabled) continue;
       const r = this.gridRect(b);
@@ -643,7 +650,7 @@ export class GamepadLayout {
 
     if (app.btnOutlineWidth > 0) {
       ctx.strokeStyle = active ? highlightColor(app.btnOutlineColor, 0.3) : app.btnOutlineColor;
-      ctx.lineWidth = app.btnOutlineWidth;
+      ctx.lineWidth = this._outlineW(app.btnOutlineWidth);
       this._shape(round, w, h, radius);
       ctx.stroke();
     }
@@ -790,10 +797,11 @@ export class GamepadLayout {
     }
     // Base outline
     if (app.joyBaseOutlineWidth > 0) {
+      const lw = this._outlineW(app.joyBaseOutlineWidth);
       ctx.beginPath();
-      ctx.arc(0, 0, baseR - app.joyBaseOutlineWidth / 2, 0, Math.PI * 2);
+      ctx.arc(0, 0, baseR - lw / 2, 0, Math.PI * 2);
       ctx.strokeStyle = active ? highlightColor(app.joyBaseOutlineColor, 0.3) : app.joyBaseOutlineColor;
-      ctx.lineWidth = app.joyBaseOutlineWidth;
+      ctx.lineWidth = lw;
       ctx.stroke();
     }
 
@@ -822,10 +830,11 @@ export class GamepadLayout {
       ctx.fill();
     }
     if (app.joyCapOutlineWidth > 0) {
+      const lw = this._outlineW(app.joyCapOutlineWidth);
       ctx.beginPath();
-      ctx.arc(kx, ky, knobR - app.joyCapOutlineWidth / 2, 0, Math.PI * 2);
+      ctx.arc(kx, ky, knobR - lw / 2, 0, Math.PI * 2);
       ctx.strokeStyle = active ? highlightColor(app.joyCapOutlineColor, 0.3) : app.joyCapOutlineColor;
-      ctx.lineWidth = app.joyCapOutlineWidth;
+      ctx.lineWidth = lw;
       ctx.stroke();
     }
 
@@ -918,7 +927,7 @@ export class GamepadLayout {
     // Border + separators (same co/w).
     if (app.dpadPadOutlineWidth > 0) {
       ctx.strokeStyle = app.dpadPadOutlineColor;
-      ctx.lineWidth = app.dpadPadOutlineWidth;
+      ctx.lineWidth = this._outlineW(app.dpadPadOutlineWidth);
       ctx.beginPath();
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -1035,7 +1044,7 @@ export class GamepadLayout {
     // ── border + region separators ──
     if (app.dpadPadOutlineWidth > 0) {
       ctx.strokeStyle = app.dpadPadOutlineColor;
-      ctx.lineWidth = app.dpadPadOutlineWidth;
+      ctx.lineWidth = this._outlineW(app.dpadPadOutlineWidth);
       ctx.beginPath();
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -1206,7 +1215,7 @@ export class GamepadLayout {
     }
     if (app.tpOutlineWidth > 0) {
       ctx.strokeStyle = active ? highlightColor(app.tpOutlineColor, 0.3) : app.tpOutlineColor;
-      ctx.lineWidth = app.tpOutlineWidth;
+      ctx.lineWidth = this._outlineW(app.tpOutlineWidth);
       this._shape(false, w, h, TOUCHPAD_RADIUS_DP);
       ctx.stroke();
     }
