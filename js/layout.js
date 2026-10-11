@@ -862,19 +862,22 @@ export class GamepadLayout {
     }
 
     // Dead-zone (yellow #FFEE00) / reverse dead-zone (blue #0088FF) indicators.
-    if (b.deadZone > 0) {
-      ctx.beginPath();
-      ctx.arc(0, 0, baseR * (b.deadZone / 100), 0, Math.PI * 2);
-      ctx.strokeStyle = "#FFEE00";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
-    if (b.reverseDeadZone > 0) {
-      ctx.beginPath();
-      ctx.arc(0, 0, baseR * (b.reverseDeadZone / 100), 0, Math.PI * 2);
-      ctx.strokeStyle = "#0088FF";
-      ctx.lineWidth = 3;
-      ctx.stroke();
+    // Only shown while editing the layout with this control selected.
+    if (this.editMode && this.selectedId === b.id) {
+      if (b.deadZone > 0) {
+        ctx.beginPath();
+        ctx.arc(0, 0, baseR * (b.deadZone / 100), 0, Math.PI * 2);
+        ctx.strokeStyle = "#FFEE00";
+        ctx.lineWidth = this._outlineW(3);
+        ctx.stroke();
+      }
+      if (b.reverseDeadZone > 0) {
+        ctx.beginPath();
+        ctx.arc(0, 0, baseR * (b.reverseDeadZone / 100), 0, Math.PI * 2);
+        ctx.strokeStyle = "#0088FF";
+        ctx.lineWidth = this._outlineW(3);
+        ctx.stroke();
+      }
     }
 
     if (fdx || fdy) ctx.restore();
