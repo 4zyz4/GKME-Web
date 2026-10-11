@@ -5,7 +5,7 @@
 
 import { Connection, getDeviceName, setDeviceName } from "./protocol.js";
 import { GamepadLayout, DEFAULT_APPEARANCE, normalizeButton } from "./layout.js";
-import { BIT, DPAD, Kb, KB_MODIFIER_CODES, MODIFIER_BITS, CONTROLS, baseId, getControl, DISPLAY_MODES, defaultSizeFor } from "./controls.js";
+import { BIT, DPAD, Kb, KB_MODIFIER_CODES, MODIFIER_BITS, CONTROLS, getControl, DISPLAY_MODES, defaultSizeFor } from "./controls.js";
 import {
   loadSettings, saveSettings, ensurePresets, savePresets, getActivePresetName,
   setActivePresetName, InputState, DEFAULT_SETTINGS,
@@ -279,9 +279,10 @@ class App {
    *  device actually is on screen (and out of the settings overlay). */
   _positionStatus() {
     if (!this.layout || !this.topbar) return;
-    const tp =
-      this.layout.buttons.find((b) => b.isTouchpad) ||
-      this.layout.buttons.find((b) => baseId(b.id) === "touchpad");
+    const tp = this.layout.buttons.find((b) => b.isTouchpad || b.isMousepad);
+    // Mirrors Android: the status label is a child of the touchpad/mousepad
+    // view, so it is only shown when such a control exists in the layout.
+    this.topbar.classList.toggle("no-touchpad", !tp);
     let left;
     let top;
     if (tp) {
@@ -406,6 +407,7 @@ class App {
   closeSettings() {
     this.settingsPanel.classList.add("hidden");
     this.topbar.classList.remove("hidden");
+    this._positionStatus();
     // Persist whatever was edited.
     saveSettings(this.settings);
     this.presets[this.activePreset] = this.layout.serialize();
@@ -614,6 +616,7 @@ class App {
     this.layout.buttons.push(b);
     this.layout.selectedId = b.id;
     this.layout.render();
+    this._positionStatus();
     this.editor.onSelect(b.id);
   }
 

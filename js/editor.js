@@ -568,6 +568,7 @@ export class LayoutEditor {
     layout.buttons = layout.buttons.filter((b) => b.id !== id);
     layout.selectedId = null;
     layout.render();
+    this.app._positionStatus();
     this.clearParams();
   }
 

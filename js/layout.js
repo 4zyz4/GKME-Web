@@ -274,7 +274,13 @@ export class GamepadLayout {
 
   setPreset(preset) {
     this.preset = preset || { buttons: [] };
-    this.buttons = (this.preset.buttons || []).map(normalizeButton);
+    // Mirrors GamepadLayout.loadPreset: every layout always carries a settings
+    // button, appended when the preset (e.g. a freshly created one) lacks it.
+    const raw = (this.preset.buttons || []).slice();
+    if (!raw.some((b) => baseId(b.id) === "btnSettings")) {
+      raw.push({ id: "btnSettings", x: (GRID_COLS - 6) / 2, y: 0, w: 6, h: 6, lockAspect: true });
+    }
+    this.buttons = raw.map(normalizeButton);
     this.selectedId = null;
     this.render();
   }

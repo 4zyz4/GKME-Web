@@ -69,6 +69,9 @@ html, body {
   pointer-events: none;
 }
 
+/* No touchpad/mousepad control in the current layout -> no status label. */
+#topbar.no-touchpad { display: none !important; }
+
 /* ── Connect overlay (CustomDialog.showCustomView look) ── */
 #connectOverlay {
   position: fixed;
