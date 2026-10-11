@@ -198,7 +198,6 @@ export const PAGES = {
           if (v) app._acquireWakeLock();
           else app._releaseWakeLock();
         })),
-        row("显示网格(编辑)", toggle(false, (v) => { app.layout.showGrid = v; app.layout.render(); })),
       ])
     );
     root.appendChild(

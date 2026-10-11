@@ -222,7 +222,6 @@ export class GamepadLayout {
     this.appearance = JSON.parse(JSON.stringify(DEFAULT_APPEARANCE));
     this.editMode = false;
     this.selectedId = null;
-    this.showGrid = false;
     this.pressedBits = 0;
     this.stickVisual = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
     this.controlActive = new Map();
@@ -377,7 +376,6 @@ export class GamepadLayout {
   enterEditMode() {
     this._snapshot = this.serialize();
     this.editMode = true;
-    this.showGrid = true;
     this.selectedId = null;
     this._adjustingFollowArea = false;
     this.render();
@@ -385,7 +383,6 @@ export class GamepadLayout {
 
   exitEditMode() {
     this.editMode = false;
-    this.showGrid = false;
     this.selectedId = null;
     this._edit = null;
     this._adjustingFollowArea = false;
@@ -441,7 +438,7 @@ export class GamepadLayout {
     this._drawFollowAreas();
     this._drawLinearTriggerBoxes();
 
-    if (this.showGrid && this.editMode) this._drawGrid();
+    if (this.editMode) this._drawGrid();
 
     for (const b of this.buttons) {
       if (!b.visible) continue;
