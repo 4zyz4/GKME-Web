@@ -117,7 +117,6 @@ class App {
       onOpenSettings: () => this.openSettings(),
       onButtonDown: (id, bit) => {
         this.state._touchButtons = (this.state._touchButtons | bit) >>> 0;
-        this.state.holdButtons(bit);
         // Send the press before any (possibly blocking) haptic call so the
         // host sees it without waiting for the next timer tick.
         this._sendFrame();
@@ -133,13 +132,11 @@ class App {
       },
       onDpad: (hat) => {
         this.state._touchDpad = hat >>> 0;
-        if (hat) this.state.holdDpad(hat >>> 0);
         this._sendFrame();
       },
       onTrigger: (which, value) => {
         if (which === "left") this.state.leftTrigger = value;
         else this.state.rightTrigger = value;
-        this.state.holdTrigger(which, value);
       },
       onTouchpad: (touches) => {
         this.state.touches = touches;
@@ -185,7 +182,6 @@ class App {
     for (const bit of bits || []) {
       if (down) {
         this.state._customBits = (this.state._customBits | bit) >>> 0;
-        this.state.holdButtons(bit);
       } else {
         this.state._customBits = (this.state._customBits & ~bit) >>> 0;
       }
@@ -208,13 +204,11 @@ class App {
       const mbit = this._modifierBitFor(code);
       if (down) {
         this.kbModifiers |= mbit;
-        this.state.holdModifier(mbit);
       } else {
         this.kbModifiers &= ~mbit;
       }
     } else if (down) {
       this.kbKeys.add(code);
-      this.state.holdKeys([code]);
     } else {
       this.kbKeys.delete(code);
     }
@@ -313,18 +307,13 @@ class App {
     if (this._sendTimer) clearInterval(this._sendTimer);
     const hz = Math.max(10, Math.min(1000, this.settings.pollingHz || 125));
     const interval = Math.round(1000 / hz);
-    // Keep short presses "on" for at least two send intervals so they survive
-    // the round trip even at low polling rates.
-    this.state.minPressMs = Math.max(60, interval * 2);
     this._sendTimer = setInterval(() => this._sendFrame(), interval);
   }
 
   _sendFrame() {
     if (!this.conn.connected) return;
     const st = this.state;
-    // Fold keyboard state into the snapshot. Time-based holds applied inside
-    // toInput() guarantee any input activated since the last send is delivered
-    // as a press for long enough for the host to sample it.
+    // Fold keyboard state into the snapshot.
     st.kbKeys = this.kbKeys;
     st.kbModifiers = this.kbModifiers;
     const input = st.toInput();

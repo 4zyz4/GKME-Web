@@ -145,6 +145,9 @@ export const TOUCHPAD_RADIUS_DP = 10; // touchpad / mousepad
 export const HANDLE_SIZE_DP = 8;
 export const MARKER_DIST_DP = 4;
 
+// Fallback extrapolation frame for 快速响应模式 (ButtonPosition.PREDICTION_FRAME_MS).
+const PREDICTION_FRAME_MS = 16;
+
 // Circle-shaped buttons (AppearanceApplier.isCircleButton).
 const ROUND_IDS = new Set([
   "btnA", "btnB", "btnX", "btnY",
@@ -578,6 +581,15 @@ export class GamepadLayout {
     ctx.save();
     ctx.globalAlpha *= opacity;
     ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+    // Linear trigger: slide the button along its axis by the drag travel
+    // (LinearTriggerView setTranslationX/Y).
+    if (b.isTrigger && b.linearTriggerEnabled && b._triggerOffset) {
+      if (b.slideDirection === "LEFT" || b.slideDirection === "RIGHT") {
+        ctx.translate(b._triggerOffset, 0);
+      } else {
+        ctx.translate(0, b._triggerOffset);
+      }
+    }
     if (b.rotation) ctx.rotate((b.rotation * Math.PI) / 180);
 
     if (b.isJoystick) this._drawJoystick(b, r);
@@ -733,6 +745,16 @@ export class GamepadLayout {
     const baseR = Math.min(r.w, r.h) / 2;
     const knobR = baseR * 0.32;
 
+    // Follow-area mode shifts the base + cap with the finger, mirroring
+    // JoystickView.onDraw's translate(effectiveCenter). The layout does not clip
+    // (setClipChildren(false)), so the moved control may overlap its neighbours.
+    const fdx = b._followDx || 0;
+    const fdy = b._followDy || 0;
+    if (fdx || fdy) {
+      ctx.save();
+      ctx.translate(fdx, fdy);
+    }
+
     // Base fill
     if (app.joyBaseFillType === 1 && app.joyBaseImage) {
       ctx.save();
@@ -809,6 +831,8 @@ export class GamepadLayout {
       ctx.lineWidth = 3;
       ctx.stroke();
     }
+
+    if (fdx || fdy) ctx.restore();
   }
 
   // ── integrated D-pad (DpadPadView.onDraw, centerShape = SQUARE) ──
@@ -822,15 +846,13 @@ export class GamepadLayout {
     const oy = -side / 2;
     const hat = b._hat || 0;
 
-    // Follow-area mode shifts the whole graphic with the finger (clipped to the
-    // control box), mirroring DpadPadView.onDraw's translate(effectiveCenter).
+    // Follow-area mode shifts the whole graphic with the finger, mirroring
+    // DpadPadView.onDraw's translate(effectiveCenter). The layout does not clip
+    // (setClipChildren(false)), so the moved control may overlap its neighbours.
     const fdx = b._followDx || 0;
     const fdy = b._followDy || 0;
     if (fdx || fdy) {
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(-r.w / 2, -r.h / 2, r.w, r.h);
-      ctx.clip();
       ctx.translate(fdx, fdy);
     }
 
@@ -916,15 +938,13 @@ export class GamepadLayout {
     const d = radius * 0.70710678;
     const region = b._region;
 
-    // Follow-area mode shifts the whole graphic with the finger (clipped to the
-    // control box), mirroring CustomKeypadView.onDraw's translate(effectiveCenter).
+    // Follow-area mode shifts the whole graphic with the finger, mirroring
+    // CustomKeypadView.onDraw's translate(effectiveCenter). The layout does not
+    // clip (setClipChildren(false)), so the moved control may overlap its neighbours.
     const fdx = b._followDx || 0;
     const fdy = b._followDy || 0;
     if (fdx || fdy) {
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(-r.w / 2, -r.h / 2, r.w, r.h);
-      ctx.clip();
       ctx.translate(fdx, fdy);
     }
 
@@ -1270,8 +1290,19 @@ export class GamepadLayout {
       return;
     }
     if (b.isTrigger && b.linearTriggerEnabled) {
-      this._pointers.set(e.pointerId, { id: b.id, kind: "trigger", b });
-      this._updateTrigger(e.pointerId, px, py);
+      // LinearTriggerView ACTION_DOWN: no travel yet, value 0, pressed while held.
+      const which = baseId(b.id) === "btnLT" ? "left" : "right";
+      b._which = which;
+      b._triggerOffset = 0;
+      b._triggerValue = 0;
+      b._triggerDown = false;
+      this._pointers.set(e.pointerId, {
+        id: b.id, kind: "trigger", b, startX: px, startY: py,
+        lastOffset: 0, lastTime: 0, sampleReady: false,
+      });
+      this.controlActive.set(b.id, true);
+      this.cb.onTrigger && this.cb.onTrigger(which, 0);
+      this.render();
       return;
     }
 
@@ -1319,6 +1350,8 @@ export class GamepadLayout {
     if (info.kind === "stick") {
       this._setStick(info.axis, 0, 0);
       this.controlActive.set(info.id, false);
+      info.b._followDx = 0;
+      info.b._followDy = 0;
       if (info.b._doubleClick) {
         this._emitBit(info.b, info.b.axis === "left" ? BIT.L3 : BIT.R3, false);
         info.b._doubleClick = false;
@@ -1339,8 +1372,18 @@ export class GamepadLayout {
       info.b._followDy = 0;
       this.controlActive.set(info.id, false);
     } else if (info.kind === "trigger") {
-      this.cb.onTrigger && this.cb.onTrigger(info.b._which, 0);
-      this.controlActive.set(info.id, false);
+      const b = info.b;
+      // LinearTriggerView ACTION_UP: reset travel + value, release the digital bit.
+      b._triggerOffset = 0;
+      b._triggerValue = 0;
+      this.cb.onTrigger && this.cb.onTrigger(b._which, 0);
+      if (b._triggerDown) {
+        this._releaseControl(b);
+        b._triggerDown = false;
+      } else {
+        this.controlActive.set(b.id, false);
+      }
+      this.render();
     } else if (info.kind === "mousepad") {
       this._finishMousepad(info);
     } else if (info.kind === "touchpad") {
@@ -1475,6 +1518,10 @@ export class GamepadLayout {
     }
     const clamp = (v) => Math.max(-1, Math.min(1, v));
     this.controlActive.set(info.id, Math.hypot(nx, ny) > 0.001);
+    // Follow-area mode shifts the base + cap to the touch point (JoystickView
+    // effectiveCenter), mirroring the dpad / keypad follow behaviour.
+    info.b._followDx = info.follow ? info.cx - (r.x + r.w / 2) : 0;
+    info.b._followDy = info.follow ? info.cy - (r.y + r.h / 2) : 0;
     // Y is emitted screen-down-positive to match the host / Android convention
     // (HID stick Y: min = up, max = down).
     this._setStick(info.axis, Math.round(clamp(nx) * 32767), Math.round(clamp(ny) * 32767));
@@ -1551,25 +1598,64 @@ export class GamepadLayout {
     this.render();
   }
 
+  // LinearTriggerView.onTouchEvent — value is the drag distance from the touch
+  // point along the slide axis over the travel distance (travelDistance × cell).
   _updateTrigger(pointerId, px, py) {
     const info = this._pointers.get(pointerId);
     if (!info) return;
     const b = info.b;
-    const r = this.gridRect(b);
-    let prog = 0;
-    const dist = Math.max(1, b.travelDistance);
+    const { cell } = this._layout;
+    const travelPx = Math.max(1, (b.travelDistance || 10) * cell);
+    const dx = px - info.startX;
+    const dy = py - info.startY;
+
+    let offset;
     switch (b.slideDirection) {
-      case "UP": prog = (r.y + r.h - py) / (r.h); break;
-      case "LEFT": prog = (r.x + r.w - px) / r.w; break;
-      case "RIGHT": prog = (px - r.x) / r.w; break;
-      default: prog = (py - r.y) / r.h;
+      case "UP": offset = Math.max(-travelPx, Math.min(0, dy)); break;
+      case "LEFT": offset = Math.max(-travelPx, Math.min(0, dx)); break;
+      case "RIGHT": offset = Math.max(0, Math.min(travelPx, dx)); break;
+      default: offset = Math.max(0, Math.min(travelPx, dy)); break; // DOWN
     }
-    prog = Math.max(0, Math.min(1, prog));
-    const which = baseId(b.id) === "btnLT" ? "left" : "right";
-    b._which = which;
-    const value = Math.round(prog * 255);
-    this.controlActive.set(b.id, value > 8);
-    this.cb.onTrigger && this.cb.onTrigger(which, value);
+    b._triggerOffset = offset;
+
+    // 快速响应模式: extrapolate the next frame's travel from the drag velocity.
+    let effective = Math.abs(offset);
+    if (b.prediction) {
+      const now = performance.now();
+      if (info.sampleReady && info.lastTime > 0) {
+        const dt = Math.max(1, now - info.lastTime);
+        const velocity = (offset - info.lastOffset) / dt;
+        // Extrapolate by one sampling interval (capped at the fallback frame)
+        // so high touch sample rates don't overshoot to full travel.
+        const frame = Math.min(dt, PREDICTION_FRAME_MS);
+        effective = Math.abs(offset + velocity * frame);
+      }
+      info.lastOffset = offset;
+      info.lastTime = now;
+      info.sampleReady = true;
+    }
+    const normalized = Math.min(1, effective / travelPx);
+    const value = normalized < 0.004 ? 0 : Math.round(normalized * 255);
+    const prev = b._triggerValue || 0;
+    b._triggerValue = value;
+
+    // Publish the analog value first so the frame sent on a bit transition
+    // already carries the matching analog level.
+    this.cb.onTrigger && this.cb.onTrigger(b._which, value);
+
+    // Mirror LinearTriggerView: 0 → >0 presses the digital LT/RT bit, >0 → 0
+    // releases it. The bit must track value==0 exactly so the host never sees
+    // analog=0 with bit=1 (which it reads as a fully-pressed digital trigger).
+    if (prev === 0 && value > 0) {
+      this._pressControl(b);
+      b._triggerDown = true;
+    } else if (prev > 0 && value === 0) {
+      this._releaseControl(b);
+      b._triggerDown = false;
+      this.controlActive.set(b.id, true);
+    }
+
+    this.controlActive.set(b.id, true);
     this.render();
   }
 
