@@ -16,8 +16,6 @@ import { FULL_CON } from "./presets.js";
 import { LayoutEditor } from "./editor.js";
 import { showConfirm, showInput } from "./dialog.js";
 
-const APP_VERSION = "1.0.0";
-
 class App {
   constructor() {
     this.settings = loadSettings();

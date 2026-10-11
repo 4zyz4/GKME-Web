@@ -1,10 +1,10 @@
 // GKME-Web — settings page builders (mirrors the 9 Android settings pages).
 
 import { el, row, section, toggle, slider, select, button, colorInput } from "./dom.js";
-import { showConfirm } from "./dialog.js";
+import { showConfirm, showSponsorDialog } from "./dialog.js";
 import { DISPLAY_MODES } from "./controls.js";
 import { DEFAULT_APPEARANCE, normalizeButton } from "./layout.js";
-import { DEFAULT_SETTINGS, savePresets } from "./state.js";
+import { DEFAULT_SETTINGS, savePresets, APP_VERSION } from "./state.js";
 import { connectedGamepads, deviceMotorCount, gamepadActuator } from "./haptics.js";
 
 function ensureAppearance(app) {
@@ -239,16 +239,18 @@ export const PAGES = {
 
   about(app, root) {
     root.appendChild(
-      section("关于 GKME-Web", [
-        row("版本", el("span", { class: "statusval", text: "1.0.0" })),
-        row("协议", el("span", { class: "statusval", text: "protobuf over WebSocket (v1)" })),
-      ])
-    );
-    root.appendChild(
-      el("div", { class: "abouttext" }, [
-        el("p", { text: "GKME — Gamepad Keyboard Mouse Emulator / General Key Mapping Engine。" }),
-        el("p", { text: "本网页版把浏览器变成虚拟手柄控制器：触摸布局、键盘、鼠标与振动。电脑端由 GKME-Windows 托管页面并创建虚拟手柄。" }),
-        el("p", { text: "开源协议：GPLv3。" }),
+      el("div", { class: "aboutpage" }, [
+        el("img", { class: "abouticon", src: "assets/icon.png", alt: "应用图标" }),
+        el("div", { class: "aboutname", text: "GKME" }),
+        el("div", { class: "aboutver", text: "版本 " + APP_VERSION }),
+        el("div", {
+          class: "aboutdesc",
+          text:
+            "作者：4zyz4  软件Q群：639317971\n\n" +
+            "开源地址：https://github.com/4zyz4/gkme\n" +
+            "注意：本软件不是Emotion，请进入Q群1045923515以下载正版Emotion",
+        }),
+        button("赞助", () => showSponsorDialog(), "aboutsponsor"),
       ])
     );
   },

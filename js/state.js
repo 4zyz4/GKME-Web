@@ -6,6 +6,9 @@ const SETTINGS_KEY = "gkme.settings.v1";
 const PRESETS_KEY = "gkme.presets.v1";
 const ACTIVE_PRESET_KEY = "gkme.activePreset.v1";
 
+// Kept in sync with the Android versionName (android/build.gradle.kts).
+export const APP_VERSION = "4.5.2";
+
 export const DEFAULT_SETTINGS = {
   displayMode: "XBOX",
   pollingHz: 120,

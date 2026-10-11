@@ -357,7 +357,16 @@ html, body {
   font-family: inherit;
 }
 
-.abouttext { color: var(--text-dim); font-size: 13px; line-height: 1.7; margin-top: 12px; }
+/* ── About page (mirrors android pageAbout) ── */
+.aboutpage { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.abouticon { width: 72px; height: 72px; margin-top: 24px; }
+.aboutname { margin-top: 12px; font-size: 20px; font-weight: 500; color: var(--text); }
+.aboutver { margin-top: 4px; font-size: 13px; color: var(--text-dim); }
+.aboutdesc { margin-top: 20px; font-size: 14px; line-height: 1.7; color: var(--text-dim); white-space: pre-line; }
+.aboutsponsor { margin-top: 28px; height: 44px; padding: 0 24px; font-size: 14px; }
+
+/* ── Sponsor dialog (android showSponsorDialog) ── */
+.sponsorimg { display: block; width: 100%; max-width: min(70vw, 260px); margin: 0 auto; }
 
 /* ── Layout editor floating panel (FloatingEditorPanel) ── */
 #editpanel {

@@ -46,6 +46,16 @@ export function showConfirm(title, message, opts = {}) {
   });
 }
 
+/** Android CustomDialog.showSponsorDialog — 赞助 with the reward QR image. */
+export function showSponsorDialog() {
+  const { overlay, box, close } = openDialog();
+  box.appendChild(el("div", { class: "dlgtitle", text: "赞助" }));
+  box.appendChild(el("div", { class: "dlgmsg", text: "感谢您的支持！" }));
+  box.appendChild(el("img", { class: "sponsorimg", src: "assets/reward.png", alt: "收款码" }));
+  box.appendChild(btnRow("关闭", null, () => close(), null));
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+}
+
 /** Android CustomDialog.showInput — resolves the trimmed string, or null on cancel. */
 export function showInput(title, opts = {}) {
   const { hint = "", prefill = "", positiveText = "确定", negativeText = "取消" } = opts;
