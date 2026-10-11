@@ -8,7 +8,7 @@ const ACTIVE_PRESET_KEY = "gkme.activePreset.v1";
 
 export const DEFAULT_SETTINGS = {
   displayMode: "XBOX",
-  pollingHz: 125,
+  pollingHz: 120,
   haptics: {
     buttonVibrate: true,
     buttonVibrateMs: 18,

@@ -20,50 +20,24 @@ const POLL_RATES = [30, 45, 60, 90, 100, 120, 200, 250, 300, 500, 750, 1000];
 
 export const PAGES = {
   connection(app, root) {
+    const hz = POLL_RATES.includes(app.settings.pollingHz) ? app.settings.pollingHz : 120;
     root.appendChild(
-      section("连接状态", [
+      section("连接", [
         row("状态", el("span", { text: app.conn.connected ? "已连接" : "未连接", class: "statusval" })),
-        row("主机", el("span", { text: app.conn.hostName || "-", class: "statusval" })),
-        row("协议版本", el("span", { text: String(app.conn.protocolVersion || "-"), class: "statusval" })),
-        row("设备 ID", el("span", { text: app.conn.deviceId, class: "statusval small" })),
-      ])
-    );
-
-    const nameInput = el("input", { type: "text", value: app.settings.meta.deviceName || "" });
-    nameInput.addEventListener("change", () => {
-      app.settings.meta.deviceName = nameInput.value;
-      setDeviceNameSafe(nameInput.value);
-      app.conn.disconnect();
-      app.conn.connect();
-    });
-
-    root.appendChild(
-      section("设备", [
-        row("设备名称", nameInput),
         row(
           "轮询率",
           select(
             POLL_RATES.map((r) => [r, r + " Hz"]),
-            String(app.settings.pollingHz),
+            String(hz),
             (v) => {
               app.settings.pollingHz = Number(v);
               app._restartSendLoop();
             }
           )
         ),
-      ])
-    );
-
-    root.appendChild(
-      section("操作", [
         el("div", { class: "btnrow" }, [
-          button("重新连接", () => {
-            app.conn.disconnect();
-            app.conn.connect();
-          }),
           button("进入全屏", () => app._enterFullscreen()),
         ]),
-        el("p", { class: "hint", text: "网页版仅使用 WebSocket 连接（等价于原 App 的 WiFi 模式）。蓝牙 HID、USB/ADB、本机(Shizuku)、被控端(uinput)模式在浏览器中不可用。" }),
       ])
     );
   },
@@ -301,10 +275,4 @@ function drawPresetPreview(canvas, preset) {
       ctx.fillRect(bx, by, bw, bh);
     }
   }
-}
-
-function setDeviceNameSafe(name) {
-  try {
-    localStorage.setItem("gkme.deviceName", name || "");
-  } catch {}
 }
