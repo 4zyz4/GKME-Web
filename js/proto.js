@@ -126,7 +126,7 @@ function encodeTouch(w, field, pt) {
 /**
  * Encode GamepadInput. `inp` fields (all optional):
  *   buttons, leftStickX/Y, rightStickX/Y, leftTrigger, rightTrigger, dpad,
- *   gyroX/Y/Z, accelX/Y/Z, batteryLevel, isCharging, touches (array),
+ *   batteryLevel, isCharging, touches (array),
  *   mouseDx/Dy/Wheel/Pan, mouseButtons, scanCodes (array), modifiers
  */
 export function encodeGamepadInput(inp) {
@@ -139,12 +139,6 @@ export function encodeGamepadInput(inp) {
   w.uint(6, inp.leftTrigger >>> 0);
   w.uint(7, inp.rightTrigger >>> 0);
   w.uint(8, inp.dpad >>> 0);
-  w.float(9, inp.gyroX);
-  w.float(10, inp.gyroY);
-  w.float(11, inp.gyroZ);
-  w.float(12, inp.accelX);
-  w.float(13, inp.accelY);
-  w.float(14, inp.accelZ);
   w.uint(16, inp.batteryLevel >>> 0);
   w.bool(17, inp.isCharging);
   if (inp.touches && inp.touches.length) {

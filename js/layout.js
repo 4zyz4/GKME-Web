@@ -43,7 +43,6 @@ const DEFAULTS = {
   linearTriggerEnabled: false,
   slideDirection: "DOWN",
   travelDistance: 10,
-  gyroActivate: false,
   autoHold: false,
   mouseSensitivity: 1,
   scrollSensitivity: 0.1,
@@ -292,23 +291,17 @@ export class GamepadLayout {
   serialize() {
     return {
       version: this.preset.version || 1,
-      gyroOrientation: this.preset.gyroOrientation || null,
-      gyroActivateMode: this.preset.gyroActivateMode || null,
-      gyroMode: this.preset.gyroMode || null,
-      gyroModeSensitivity: this.preset.gyroModeSensitivity,
       buttons: this.buttons.map((b) => {
         const o = { id: b.id, x: b.x, y: b.y, width: b.w, height: b.h, rotation: b.rotation || 0 };
         if (!b.visible) o.visible = false;
         if (b.isCustom) { o.isCustom = true; o.customText = b.customText; o.customBits = b.customBits || []; }
         if (b.roundShape) o.roundShape = true;
-        if (b.gyroActivate) o.gyroActivate = true;
         if (b.autoHold) o.autoHold = true;
         if (b.overlapTrigger === false) o.overlapTrigger = false;
         if (b.linearTriggerEnabled) { o.linearTriggerEnabled = true; o.slideDirection = b.slideDirection; o.travelDistance = b.travelDistance; }
         if (b.isKeypad) { o.keypadTexts = b.keypadTexts; o.keypadBits = b.keypadBits; o.keypadEightWay = b.keypadEightWay; }
         return o;
       }),
-      gyroStickCurve: this.preset.gyroStickCurve || null,
     };
   }
 
@@ -1135,7 +1128,6 @@ export class GamepadLayout {
     } else if (b.isCustom) {
       this.controlActive.set(b.id, true);
       this.cb.onCustomBits && this.cb.onCustomBits(b.customBits || [], true);
-      if (b.gyroActivate) this.cb.onGyroActivate && this.cb.onGyroActivate(true);
     }
     this.render();
   }
@@ -1151,7 +1143,6 @@ export class GamepadLayout {
     } else if (b.isCustom) {
       this.controlActive.set(b.id, false);
       this.cb.onCustomBits && this.cb.onCustomBits(b.customBits || [], false);
-      if (b.gyroActivate) this.cb.onGyroActivate && this.cb.onGyroActivate(false);
     }
     this.render();
   }

@@ -1,6 +1,6 @@
 // GKME-Web — application controller.
 //
-// Wires the connection, layout engine, input aggregation, gyro, haptics and the
+// Wires the connection, layout engine, input aggregation, haptics and the
 // settings UI together, mirroring the Android GkViewModel + MainActivity roles.
 
 import { Connection, getDeviceName, setDeviceName } from "./protocol.js";
@@ -11,7 +11,6 @@ import {
   setActivePresetName, InputState, DEFAULT_SETTINGS,
 } from "./state.js";
 import { Haptics } from "./haptics.js";
-import { Gyro } from "./gyro.js";
 import { PAGES } from "./settings-pages.js";
 
 const APP_VERSION = "1.0.0";
@@ -27,7 +26,6 @@ class App {
     this.conn = new Connection();
     this.state = new InputState();
     this.haptics = new Haptics(this.settings);
-    this.gyro = new Gyro();
 
     this.kbKeys = new Set();
     this.kbModifiers = 0;
@@ -281,7 +279,6 @@ class App {
   _startLoops() {
     const loop = () => {
       this._pollPhysicalGamepad();
-      this._applyGyro();
       this.layout.setPressedBits(this.state.buttons);
       this.layout.render();
       this._raf = requestAnimationFrame(loop);
@@ -310,18 +307,6 @@ class App {
     st.mouseDy = 0;
     st.mouseWheel = 0;
     st.mousePan = 0;
-  }
-
-  _applyGyro() {
-    // Native passthrough only: report the raw sensors to the host, which feeds
-    // them into the emulated controller's own gyro/accel lane.
-    const g = this.gyro;
-    this.state.gyroX = g.gyroX;
-    this.state.gyroY = g.gyroY;
-    this.state.gyroZ = g.gyroZ;
-    this.state.accelX = g.accelX;
-    this.state.accelY = g.accelY;
-    this.state.accelZ = g.accelZ;
   }
 
   // ── Physical controller forwarding (Gamepad API) ──
@@ -406,7 +391,6 @@ class App {
       ["presets", "布局预设"],
       ["physical", "实体手柄"],
       ["vibration", "震动"],
-      ["gyro", "陀螺仪"],
       ["misc", "杂项"],
       ["about", "关于"],
     ];

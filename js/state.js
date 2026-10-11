@@ -15,8 +15,6 @@ export const DEFAULT_SETTINGS = {
     gameVibrate: true,
     swapMotors: false,
   },
-  // Gyro/accel are reported natively to the host; no web-side mapping options.
-  gyro: {},
   mouse: {
     pointerAcceleration: 1,
     scrollSensitivity: 0.1,
@@ -99,8 +97,8 @@ export function setActivePresetName(name) {
 }
 
 // ── Live input state ──
-// Aggregates touch controls, physical controller forwarding and gyro output
-// into one GamepadInput-shaped snapshot.
+// Aggregates touch controls, physical controller forwarding and keyboard/mouse
+// input into one GamepadInput-shaped snapshot.
 export class InputState {
   constructor() {
     this.buttons = 0; // GKME bitmask (uint32)
@@ -117,12 +115,6 @@ export class InputState {
     this.mousePan = 0;
     this.mouseButtons = 0;
     this.touches = [];
-    this.gyroX = 0;
-    this.gyroY = 0;
-    this.gyroZ = 0;
-    this.accelX = 0;
-    this.accelY = 0;
-    this.accelZ = 0;
     // keyboard
     this.kbModifiers = 0;
     this.kbKeys = new Set(); // usages
@@ -152,12 +144,6 @@ export class InputState {
       rightStickY: this.rightStickY,
       leftTrigger: this.leftTrigger,
       rightTrigger: this.rightTrigger,
-      gyroX: this.gyroX,
-      gyroY: this.gyroY,
-      gyroZ: this.gyroZ,
-      accelX: this.accelX,
-      accelY: this.accelY,
-      accelZ: this.accelZ,
       mouseDx: this.mouseDx,
       mouseDy: this.mouseDy,
       mouseWheel: this.mouseWheel,

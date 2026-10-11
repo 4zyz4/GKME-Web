@@ -217,29 +217,6 @@ export const PAGES = {
     );
   },
 
-  gyro(app, root) {
-    const status = el("span", { class: "statusval", text: gyroStatus(app) });
-    root.appendChild(
-      section("手柄原生陀螺仪", [
-        row("状态", status),
-        el("div", { class: "btnrow" }, [
-          button("启用体感", async () => {
-            const ok = await app.gyro.start();
-            status.textContent = gyroStatus(app);
-            app._toast(ok ? "体感已启用" : "体感启用失败（需要 HTTPS 与用户授权）");
-          }),
-          button("停止", () => {
-            app.gyro.stop();
-            status.textContent = gyroStatus(app);
-          }, "ghost"),
-        ]),
-      ])
-    );
-    root.appendChild(
-      el("p", { class: "hint", text: "陀螺仪与加速度计数据将直接作为手柄原生陀螺仪上报给电脑端，不在网页端做鼠标/摇杆映射。需要安全上下文（HTTPS 或 localhost），iOS 还需在用户手势中授权。" })
-    );
-  },
-
   misc(app, root) {
     root.appendChild(
       section("显示", [
@@ -308,7 +285,7 @@ export const PAGES = {
     root.appendChild(
       el("div", { class: "abouttext" }, [
         el("p", { text: "GKME — Gamepad Keyboard Mouse Emulator / General Key Mapping Engine。" }),
-        el("p", { text: "本网页版把浏览器变成虚拟手柄控制器：触摸布局、键盘、鼠标、体感与振动。电脑端由 GKME-Windows 托管页面并创建虚拟手柄。" }),
+        el("p", { text: "本网页版把浏览器变成虚拟手柄控制器：触摸布局、键盘、鼠标与振动。电脑端由 GKME-Windows 托管页面并创建虚拟手柄。" }),
         el("p", { text: "开源协议：GPLv3。" }),
       ])
     );
@@ -326,12 +303,6 @@ function exportJson(filename, obj) {
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-
-function gyroStatus(app) {
-  if (!app.gyro.supported) return "不支持";
-  if (app.gyro.enabled) return "运行中";
-  return "未启用";
 }
 
 function setDeviceNameSafe(name) {

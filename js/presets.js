@@ -4,9 +4,6 @@
 
 export const FULL_CON = {
   version: 1,
-  gyroOrientation: "LANDSCAPE",
-  gyroActivateMode: "ALWAYS",
-  gyroMode: "HANDHELD",
   buttons: [
     { id: "touchpad", x: 39, y: 7, w: 44, h: 28, lockAspect: false, overlapTrigger: true, doubleClickEnable: true },
     { id: "btnY", x: 100, y: 11, w: 10, h: 10, lockAspect: true },
