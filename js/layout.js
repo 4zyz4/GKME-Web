@@ -829,6 +829,20 @@ export class GamepadLayout {
       ctx.stroke();
     }
 
+    // L/R label — JoystickView.onDraw draws the letter centred on the cap ("L" for the left
+    // stick, "R" for the right), sized at knobRadius × 1.1 and capped by iconMaxSize.
+    const label = b.axis === "left" ? "L" : "R";
+    const labelCap = contentCapPx(app);
+    let fs = knobR * 1.1;
+    if (labelCap !== Infinity) fs = Math.min(fs, labelCap);
+    if (fs > 0) {
+      ctx.fillStyle = app.joyIconColor;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `${fs}px ${UI_FONT}`;
+      ctx.fillText(label, kx, ky);
+    }
+
     // Dead-zone (yellow #FFEE00) / reverse dead-zone (blue #0088FF) indicators.
     if (b.deadZone > 0) {
       ctx.beginPath();
