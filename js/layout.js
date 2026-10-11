@@ -154,6 +154,26 @@ function isCircleButton(id) {
   return ROUND_IDS.has(b) || b.startsWith("btnCustomCircle");
 }
 
+// ── CustomKeypadView region tables ──
+// Region index: 0=up, 1=down, 2=left, 3=right, 4=centre, 5=up-left, 6=up-right,
+// 7=down-left, 8=down-right (mirrors ButtonPosition.KEYPAD_*).
+const KEYPAD_DEFAULT_TEXTS = ["上", "下", "左", "右", "中", "左上", "右上", "左下", "右下"];
+// 8-direction mode: 3×3 grid cell (row*3+col) → region; -1 = centre cell.
+const KEYPAD_GRID_REGION = [[5, 0, 6], [2, -1, 3], [7, 1, 8]];
+// region index → grid cell index.
+const KEYPAD_REGION_CELL = [1, 7, 3, 5, 4, 0, 2, 6, 8];
+// Circular-centre mode: polar sector (0=right, clockwise) → region index.
+const KEYPAD_CIRCLE_SECTOR_8 = [3, 8, 1, 7, 2, 5, 0, 6];
+const KEYPAD_CIRCLE_SECTOR_4 = [3, 1, 2, 0];
+// region → [startDeg, sweepDeg] sector ring (Android canvas: 0° = right, CW).
+const KEYPAD_SECTORS = {
+  "4": { 0: [225, 90], 1: [45, 90], 2: [135, 90], 3: [-45, 90] },
+  "8": {
+    0: [247.5, 45], 1: [67.5, 45], 2: [157.5, 45], 3: [-22.5, 45],
+    5: [202.5, 45], 6: [292.5, 45], 7: [112.5, 45], 8: [22.5, 45],
+  },
+};
+
 // AppearanceApplier.highlightColor — move `factor` of the way toward white.
 export function highlightColor(color, factor) {
   const { r, g, b, a } = parseColor(color);
@@ -921,15 +941,26 @@ export class GamepadLayout {
     return { x: ox + col * a, y: oy + row * a, w: a, h: a };
   }
 
-  // ── custom keypad (CustomKeypadView.onDraw, 4-direction wedge mode) ──
+  // ── custom keypad (CustomKeypadView.onDraw) ──
+  // Supports 4/8-direction layouts with a square or circular centre:
+  //   square + 4 = wedges around a centre square,
+  //   square + 8 = 3×3 grid inside the circle,
+  //   circle + 4/8 = radial sector rings around a centre circle.
   _drawKeypad(b, r) {
     const ctx = this.ctx;
     const app = this.appearance;
     const side = Math.min(r.w, r.h);
     const radius = side / 2;
     const half = side * 0.20;
+    const third = side / 3;
     const d = radius * 0.70710678;
+    const eightWay = !!b.keypadEightWay;
+    const circleCenter = (b.centerShape || "SQUARE") === "CIRCLE";
     const region = b._region;
+    const base = app.dpadPadColor;
+    const highlight = highlightColor(base, 0.3);
+    const centerHighlight = highlightColor(base, 0.45);
+    const centerR = eightWay ? third / 2 : half;
 
     // Follow-area mode shifts the whole graphic with the finger, mirroring
     // CustomKeypadView.onDraw's translate(effectiveCenter). The layout does not
@@ -941,49 +972,155 @@ export class GamepadLayout {
       ctx.translate(fdx, fdy);
     }
 
-    // Ring fill (circle minus centre square).
+    // Base fill + region highlights, clipped to the circle.
+    ctx.save();
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.rect(-half, -half, half * 2, half * 2);
-    ctx.fillStyle = app.dpadPadColor;
-    ctx.fill("evenodd");
+    ctx.clip();
 
-    if (region != null && region >= 0 && region <= 3) {
-      ctx.fillStyle = highlightColor(app.dpadPadColor, 0.3);
+    ctx.fillStyle = base;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (circleCenter) {
+      const sectors = KEYPAD_SECTORS[eightWay ? "8" : "4"];
+      if (region != null && sectors[region]) {
+        ctx.fillStyle = highlight;
+        this._keypadSector(ctx, radius, centerR, sectors[region][0], sectors[region][1]);
+        ctx.fill();
+      }
+      if (b._keypadCenter) {
+        ctx.fillStyle = centerHighlight;
+        ctx.beginPath();
+        ctx.arc(0, 0, centerR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (eightWay) {
+      if (region != null && region >= 0 && region <= 8 && region !== 4) {
+        ctx.fillStyle = highlight;
+        this._keypadCell(ctx, radius, third, region);
+        ctx.fill();
+      }
+      ctx.fillStyle = b._keypadCenter ? centerHighlight : base;
+      this._keypadCell(ctx, radius, third, 4);
+      ctx.fill();
+    } else {
+      if (region != null && region >= 0 && region <= 3) {
+        ctx.fillStyle = highlight;
+        this._keypadWedge(ctx, region, half, d, radius);
+        ctx.fill();
+      }
+      ctx.fillStyle = b._keypadCenter ? centerHighlight : base;
       ctx.beginPath();
-      this._keypadWedge(ctx, region, half, d, radius);
+      ctx.rect(-half, -half, half * 2, half * 2);
       ctx.fill();
     }
-    ctx.fillStyle = app.dpadPadColor;
-    ctx.fillRect(-half, -half, half * 2, half * 2);
+    ctx.restore(); // circle clip
 
+    // ── border + region separators ──
     if (app.dpadPadOutlineWidth > 0) {
       ctx.strokeStyle = app.dpadPadOutlineColor;
       ctx.lineWidth = app.dpadPadOutlineWidth;
       ctx.beginPath();
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(-half, -half); ctx.lineTo(-d, -d);
-      ctx.moveTo(half, -half); ctx.lineTo(d, -d);
-      ctx.moveTo(-half, half); ctx.lineTo(-d, d);
-      ctx.moveTo(half, half); ctx.lineTo(d, d);
-      ctx.stroke();
-      ctx.strokeRect(-half, -half, half * 2, half * 2);
+
+      if (circleCenter) {
+        ctx.beginPath();
+        ctx.arc(0, 0, centerR, 0, Math.PI * 2);
+        ctx.stroke();
+        const step = eightWay ? 45 : 90;
+        for (let deg = eightWay ? 22.5 : 45; deg < 360; deg += step) {
+          const rad = (deg * Math.PI) / 180;
+          ctx.beginPath();
+          ctx.moveTo(centerR * Math.cos(rad), centerR * Math.sin(rad));
+          ctx.lineTo(radius * Math.cos(rad), radius * Math.sin(rad));
+          ctx.stroke();
+        }
+      } else if (eightWay) {
+        const a = third;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.beginPath();
+        ctx.moveTo(-radius + a, -radius); ctx.lineTo(-radius + a, radius);
+        ctx.moveTo(-radius + 2 * a, -radius); ctx.lineTo(-radius + 2 * a, radius);
+        ctx.moveTo(-radius, -radius + a); ctx.lineTo(radius, -radius + a);
+        ctx.moveTo(-radius, -radius + 2 * a); ctx.lineTo(radius, -radius + 2 * a);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(-half, -half); ctx.lineTo(-d, -d);
+        ctx.moveTo(half, -half); ctx.lineTo(d, -d);
+        ctx.moveTo(-half, half); ctx.lineTo(-d, d);
+        ctx.moveTo(half, half); ctx.lineTo(d, d);
+        ctx.stroke();
+        ctx.strokeRect(-half, -half, half * 2, half * 2);
+      }
     }
 
-    // Region texts (0=up,1=down,2=left,3=right,4=centre).
-    const texts = b.keypadTexts || ["上", "下", "左", "右", "中"];
+    // ── region texts (0=up,1=down,2=left,3=right,4=centre,5..8=diagonals) ──
+    const texts = b.keypadTexts || KEYPAD_DEFAULT_TEXTS;
+    const t = (i) => (texts[i] != null ? texts[i] : "");
     const cap = contentCapPx(app);
-    const box = radius * 0.667;
-    const off = radius * 0.58;
-    this._keypadText(texts[0], 0, -off, box, cap, app.dpadPadIconColor);
-    this._keypadText(texts[1], 0, off, box, cap, app.dpadPadIconColor);
-    this._keypadText(texts[2], -off, 0, box, cap, app.dpadPadIconColor);
-    this._keypadText(texts[3], off, 0, box, cap, app.dpadPadIconColor);
-    this._keypadText(texts[4], 0, 0, half * 2, cap, app.dpadPadIconColor);
+    const color = app.dpadPadIconColor;
+    if (circleCenter) {
+      const midR = centerR + (radius - centerR) * 0.62;
+      const box = (radius - centerR) * 0.9;
+      const place = (reg, deg) => {
+        const rad = (deg * Math.PI) / 180;
+        this._keypadText(t(reg), midR * Math.cos(rad), midR * Math.sin(rad), box, cap, color);
+      };
+      place(0, 270); place(1, 90); place(2, 180); place(3, 0);
+      if (eightWay) { place(5, 225); place(6, 315); place(7, 135); place(8, 45); }
+      this._keypadText(t(4), 0, 0, centerR * 2, cap, color);
+    } else if (eightWay) {
+      const a = third;
+      this._keypadText(t(0), 0, -radius + a / 2, a, cap, color);
+      this._keypadText(t(1), 0, -radius + 2.5 * a, a, cap, color);
+      this._keypadText(t(2), -radius + a / 2, 0, a, cap, color);
+      this._keypadText(t(3), -radius + 2.5 * a, 0, a, cap, color);
+      this._keypadText(t(4), 0, 0, a, cap, color);
+      // Corner cells are clipped by the circle, so use a smaller box.
+      const cornerBox = radius * 0.5;
+      const cOff = radius * 0.57;
+      this._keypadText(t(5), -cOff, -cOff, cornerBox, cap, color);
+      this._keypadText(t(6), cOff, -cOff, cornerBox, cap, color);
+      this._keypadText(t(7), -cOff, cOff, cornerBox, cap, color);
+      this._keypadText(t(8), cOff, cOff, cornerBox, cap, color);
+    } else {
+      const box = radius * 0.667;
+      const off = radius * 0.58;
+      this._keypadText(t(0), 0, -off, box, cap, color);
+      this._keypadText(t(1), 0, off, box, cap, color);
+      this._keypadText(t(2), -off, 0, box, cap, color);
+      this._keypadText(t(3), off, 0, box, cap, color);
+      this._keypadText(t(4), 0, 0, half * 2, cap, color);
+    }
 
     if (fdx || fdy) ctx.restore();
+  }
+
+  // 8-way square-centre mode: 3×3 grid cell for a region index.
+  _keypadCell(ctx, radius, a, region) {
+    const cell = KEYPAD_REGION_CELL[region];
+    const col = cell % 3;
+    const row = (cell - col) / 3;
+    ctx.beginPath();
+    ctx.rect(-radius + col * a, -radius + row * a, a, a);
+  }
+
+  // Circular-centre mode: sector ring between the centre circle and the outer circle.
+  _keypadSector(ctx, outerR, innerR, startDeg, sweepDeg) {
+    const s = (startDeg * Math.PI) / 180;
+    const e = ((startDeg + sweepDeg) * Math.PI) / 180;
+    ctx.beginPath();
+    ctx.arc(0, 0, outerR, s, e, false);
+    ctx.arc(0, 0, innerR, e, s, true);
+    ctx.closePath();
   }
 
   _keypadWedge(ctx, region, c, d, radius) {
@@ -1233,8 +1370,7 @@ export class GamepadLayout {
         this._pointers.set(e.pointerId, { id: followB.id, kind: "dpad", b: followB, follow: true, cx: px, cy: py });
         this._updateDpad(e.pointerId, px, py);
       } else {
-        this._pointers.set(e.pointerId, { id: followB.id, kind: "keypad", b: followB, follow: true, cx: px, cy: py });
-        this._updateKeypad(e.pointerId, px, py);
+        this._keypadDown(e, followB, px, py, true);
       }
       return;
     }
@@ -1273,8 +1409,7 @@ export class GamepadLayout {
       return;
     }
     if (b.isKeypad) {
-      this._pointers.set(e.pointerId, { id: b.id, kind: "keypad", b });
-      this._updateKeypad(e.pointerId, px, py);
+      this._keypadDown(e, b, px, py, false);
       return;
     }
     if (b.isTrigger && b.linearTriggerEnabled) {
@@ -1350,14 +1485,17 @@ export class GamepadLayout {
       this.cb.onDpad && this.cb.onDpad(0);
       this.controlActive.set(info.id, false);
     } else if (info.kind === "keypad") {
-      if (info.b._region != null) {
-        const bits = (info.b.keypadBits && info.b.keypadBits[info.b._region]) || [];
-        this.cb.onCustomBits && this.cb.onCustomBits(bits, false);
+      const b = info.b;
+      if (b._region != null && b._region !== 4) this._emitKeypadRegion(b, b._region, false);
+      if (b._keypadCenter) {
+        b._keypadCenter = false;
+        this._emitKeypadRegion(b, 4, false);
       }
-      info.b._region = null;
-      info.b._followDx = 0;
-      info.b._followDy = 0;
-      this.controlActive.set(info.id, false);
+      b._region = null;
+      b._followDx = 0;
+      b._followDy = 0;
+      b._doubleClick = false;
+      this.controlActive.set(b.id, false);
     } else if (info.kind === "trigger") {
       const b = info.b;
       // LinearTriggerView ACTION_UP: reset travel + value, release the digital bit.
@@ -1539,6 +1677,38 @@ export class GamepadLayout {
     this.render();
   }
 
+  // CustomKeypadView.directionAt — resolves a point (relative to the effective
+  // centre) to a region index; 4 = centre.
+  _keypadRegionAt(b, dx, dy, r) {
+    const side = Math.min(r.w, r.h);
+    const radius = side / 2;
+    if ((b.centerShape || "SQUARE") === "CIRCLE") {
+      const centerR = b.keypadEightWay ? side / 6 : side * 0.20;
+      if (dx * dx + dy * dy <= centerR * centerR) return 4;
+      let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+      if (deg < 0) deg += 360;
+      if (b.keypadEightWay) {
+        const k = Math.floor((((deg + 22.5) % 360) / 45)) % 8;
+        return KEYPAD_CIRCLE_SECTOR_8[k];
+      }
+      const k = Math.floor((((deg + 45) % 360) / 90)) % 4;
+      return KEYPAD_CIRCLE_SECTOR_4[k];
+    }
+    if (b.keypadEightWay) {
+      const a = side / 3;
+      const lx = dx + radius;
+      const ly = dy + radius;
+      const col = lx < a ? 0 : lx < 2 * a ? 1 : 2;
+      const row = ly < a ? 0 : ly < 2 * a ? 1 : 2;
+      const region = KEYPAD_GRID_REGION[row][col];
+      return region < 0 ? 4 : region;
+    }
+    const half = side * 0.20;
+    if (Math.abs(dx) <= half && Math.abs(dy) <= half) return 4;
+    if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? 3 : 2;
+    return dy < 0 ? 0 : 1;
+  }
+
   _updateKeypad(pointerId, px, py) {
     const info = this._pointers.get(pointerId);
     if (!info) return;
@@ -1548,39 +1718,42 @@ export class GamepadLayout {
     const ccy = r.y + r.h / 2;
     const cx = info.follow ? info.cx : ccx;
     const cy = info.follow ? info.cy : ccy;
-    const nx = (px - cx) / (r.w / 2);
-    const ny = (py - cy) / (r.h / 2);
     b._followDx = info.follow ? info.cx - ccx : 0;
     b._followDy = info.follow ? info.cy - ccy : 0;
-    // region: 4 = center; 0 up,1 down,2 left,3 right; diagonals 5..8
-    let region = 4;
-    const t = 0.35;
-    const ax = Math.abs(nx);
-    const ay = Math.abs(ny);
-    if (ax > t && ay > t) {
-      if (ny < 0 && nx < 0) region = 5;
-      else if (ny < 0 && nx > 0) region = 6;
-      else if (ny > 0 && nx < 0) region = 7;
-      else region = 8;
-      if (!b.keypadEightWay) region = ax > ay ? (nx > 0 ? 3 : 2) : (ny > 0 ? 1 : 0);
-    } else if (ax > t) {
-      region = nx > 0 ? 3 : 2;
-    } else if (ay > t) {
-      region = ny > 0 ? 1 : 0;
-    }
+    const region = this._keypadRegionAt(b, px - cx, py - cy, r);
     if (b._region !== region) {
-      if (b._region != null) {
-        const oldBits = (b.keypadBits && b.keypadBits[b._region]) || [];
-        this.cb.onCustomBits && this.cb.onCustomBits(oldBits, false);
+      if (b._region != null && b._region !== 4) {
+        this._emitKeypadRegion(b, b._region, false);
       }
       b._region = region;
-      if (region !== 4) {
-        const bits = (b.keypadBits && b.keypadBits[region]) || [];
-        this.cb.onCustomBits && this.cb.onCustomBits(bits, true);
-      }
+      if (region !== 4) this._emitKeypadRegion(b, region, true);
     }
     this.controlActive.set(b.id, region !== 4);
     this.render();
+  }
+
+  // Emit the bits bound to a keypad region (region 4 = the double-tap centre).
+  _emitKeypadRegion(b, region, down) {
+    const bits = (b.keypadBits && b.keypadBits[region]) || [];
+    this.cb.onCustomBits && this.cb.onCustomBits(bits, down);
+  }
+
+  // CustomKeypadView.handleDown — the centre fires only on a double-tap; a
+  // single tap in the centre is ignored.
+  _keypadDown(e, b, px, py, follow) {
+    b._keypadCenter = false;
+    const r = this.gridRect(b);
+    const region = this._keypadRegionAt(b, px - (r.x + r.w / 2), py - (r.y + r.h / 2), r);
+    if (region === 4) {
+      this._maybeDoubleTap(b, px, py, true, 32, () => {
+        b._keypadCenter = true;
+        this._emitKeypadRegion(b, 4, true);
+      });
+    }
+    const info = { id: b.id, kind: "keypad", b };
+    if (follow) { info.follow = true; info.cx = px; info.cy = py; }
+    this._pointers.set(e.pointerId, info);
+    this._updateKeypad(e.pointerId, px, py);
   }
 
   // LinearTriggerView.onTouchEvent — value is the drag distance from the touch
