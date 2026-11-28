@@ -268,12 +268,11 @@ class App {
       onTouchpad: (touches) => {
         this.state.touches = touches;
       },
-      // Precision touchpad sends a full-state frame immediately; the periodic
-      // loop must not repeat it (field absent = no update).
+      // Precision touchpad only updates the snapshot; the next frame (periodic
+      // or immediate) carries every contact at once. Several pointer events can
+      // arrive between frames, and one full-state frame is enough for all.
       onPrecisionTouchpad: (contacts) => {
         this.state.precisionTouchpad = { contacts, buttons: 0 };
-        this._sendFrame();
-        this.state.precisionTouchpad = null;
       },
       onMouseMove: (dx, dy, speed, b) => this._onMouseMove(dx, dy, speed, b),
       onMouseScroll: (dx, dy, b) => this._onMouseScroll(dx, dy, b),
@@ -720,6 +719,9 @@ class App {
     this.conn.sendGamepadInput(input);
     // Mouse deltas are one-shot; periodic frames must not repeat them.
     st.clearMouseDeltas();
+    // Precision touchpad contacts were just sent as one full-state frame;
+    // repeating them every tick would only flood the host.
+    st.precisionTouchpad = null;
   }
 
   // ── Physical controller forwarding (Gamepad API) ──
