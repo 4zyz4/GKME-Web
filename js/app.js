@@ -129,6 +129,19 @@ class App {
     this.settingsClose.addEventListener("click", () => this.closeSettings());
     window.addEventListener("gamepadconnected", () => this._onGamepadsChanged());
     window.addEventListener("gamepaddisconnected", () => this._onGamepadsChanged());
+    // iOS Safari ignores `user-scalable=no` and keeps its own pinch-zoom / rotate
+    // recognizer running on multi-finger input even with `touch-action: none`;
+    // every extra finger then costs main-thread time. Cancel the proprietary
+    // gesture events (only Safari fires these, so this is a no-op elsewhere).
+    for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+      document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+    }
+    // The canvas is only repainted when something changes; iOS may drop the
+    // backing store while the page is in the background, so repaint on resume.
+    const repaint = () => { if (this.layout) this.layout.render(); };
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) repaint(); });
+    window.addEventListener("pageshow", repaint);
+    window.addEventListener("focus", repaint);
     const onViewportChange = () => this._onViewportChange();
     window.addEventListener("resize", onViewportChange);
     window.addEventListener("orientationchange", () => setTimeout(onViewportChange, 300));
@@ -660,7 +673,8 @@ class App {
       this._refreshGyroTouchActivation();
       this._updateGyro(dt);
       this.layout.setPressedBits(this.state.buttons);
-      this.layout.render();
+      // Only repaints when input / visuals actually changed (see render()).
+      this.layout.paint();
       this._raf = requestAnimationFrame(loop);
     };
     this._raf = requestAnimationFrame(loop);
