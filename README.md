@@ -126,6 +126,8 @@ protobuf 定义来自电脑端的 `proto/gamepad_state.proto`，在浏览器侧�
 
 > 首次连接需手动点击；页面会显示连接状态与字节统计。
 
+> 体感（陀螺仪 / 加速度计）只在**安全上下文**下可用，默认的 `http://192.168.x.x:37285/` 不会开放传感器。需要体感时，请在电脑端打开「连接 → 网页手柄 HTTPS…」配置域名与证书，然后改用卡片上显示的 `https://` 地址访问；页面与 `/ws` 同源，无需其他改动。
+
 ---
 
 ## 部署与集成
@@ -146,7 +148,7 @@ protobuf 定义来自电脑端的 `proto/gamepad_state.proto`，在浏览器侧�
 | 手柄 | 支持 WebSocket 的本机电脑，运行 GKME 电脑端 |
 | 屏幕方向 | 建议横屏；iOS 全屏需「添加到主屏幕」 |
 | 震动 | 手机马达需浏览器支持 Vibration API（多见于移动端）；实体手柄马达需 Gamepad API 暴露 `vibrationActuator` |
-| 体感 | 需浏览器支持 DeviceMotion API，且页面处于安全上下文（HTTPS 或 localhost）；iOS 13+ 还需用户手势授权 |
+| 体感 | 需浏览器支持 DeviceMotion API，且页面处于安全上下文（HTTPS 或 localhost）；iOS 13+ 还需用户手势授权。电脑端可在「连接 → 网页手柄 HTTPS…」用自备证书开启 HTTPS |
 | 保持常亮 | 需浏览器支持 Screen Wake Lock API |
 
 ---
